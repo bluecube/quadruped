@@ -3,6 +3,11 @@ use nalgebra::{Point2, Vector2};
 //use dimensioned::si;
 
 
+fn perpendicular(v: Vector2<f64>) -> Vector2<f64> {
+    Vector2::new(v.y, -v.x)
+}
+
+
 /// Given two points `point_a` and `point_b` and two trigangle side lengths
 /// `length_a` (= |AC|) and `length_b` (= |BC|), calculates (one possible) point C.
 /// If no such triangle exists, returns None.
@@ -28,9 +33,7 @@ fn find_triangle_point(point_a: Point2<f64>, length_a: f64, point_b: Point2<f64>
     }
     let s = s_squared.sqrt();
 
-    let ba_perpendicular = Vector2::new(ba.y, -ba.x);
-
-    let point_c = point_a + ba * t + ba_perpendicular * s;
+    let point_c = point_a + ba * t + perpendicular(ba) * s;
 
     Some(point_c)
 }
@@ -48,6 +51,14 @@ mod tests {
     fn point2_strategy() -> impl Strategy<Value=Point2<f64>> {
         //vector(proptest::num::f64::NORMAL, Const::<2>).prop_map(|x| Point2::from(x))
         vector(-1000.0..1000.0, Const::<2>).prop_map(|x| Point2::from(x))
+    }
+
+    #[proptest]
+    fn perpendicular_has_zero_dot_product(
+        #[strategy(vector(-1000.0..1000.0, Const::<2>))]
+        v: Vector2<f64>
+    ) {
+        assert_eq!(v.dot(&perpendicular(v)), 0.0);
     }
 
     #[proptest]

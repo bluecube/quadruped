@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc e64a909fe9553ca26a557b4576c753ac42a718c6d3c13f706cd5c889b1eed9ee # shrinks to input = _FindTrianglePointCorrectDistancesArgs { point_a: [0.0, 738.3225398381485], length_a: 0.0, point_b: [0.0, 832.868389810511], length_b: 368.0210820883849 }
+cc 2d3906bf307c80d15915d82a7f9b5b03e1d36d4c8c07ba313f2e48bb05fbabdd # shrinks to input = _PerpendicularHasZeroDotProductArgs { v: [[2.0517648800774524e246, 4.1395117166412965e211]] }
