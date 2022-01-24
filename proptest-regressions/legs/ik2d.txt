@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc e64a909fe9553ca26a557b4576c753ac42a718c6d3c13f706cd5c889b1eed9ee # shrinks to input = _FindTrianglePointCorrectDistancesArgs { point_a: [0.0, 738.3225398381485], length_a: 0.0, point_b: [0.0, 832.868389810511], length_b: 368.0210820883849 }
