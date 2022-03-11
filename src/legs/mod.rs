@@ -1,1 +1,1 @@
-pub mod ik2d;
+pub mod planar;
