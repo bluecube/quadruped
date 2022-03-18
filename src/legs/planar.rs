@@ -11,11 +11,15 @@ pub struct Params {
     pub len_ce: f64,
     pub len_df: f64,
 
+    /// Precomputed value to convert from FD vector to DE vector
     /// vector DE = FD * fd_to_de_scale.x + perpendicular(FD) * fd_to_de_scale.y
     pub fd_to_de_scale: Vector2<f64>,
 }
 
 impl Params {
+    /// Determine whether the params have a chance of allowing a (forward or reverse)
+    /// kinematic solution.
+    /// This is not a sufficient condition for existence of (any) solution.
     fn is_valid(&self, min_distance: f64) -> bool {
         let len_ab = distance(&self.point_a, &self.point_b);
         let len_de = self.fd_to_de_scale.norm() * self.len_df;
@@ -33,20 +37,69 @@ impl Params {
 }
 
 /// Positions of points in the 2D leg plane view
+/// This is a necessary state when doing both forward and inverse kinematics.
 #[derive(Clone, Debug)]
 pub struct KinematicState {
-    // Points A and B are repeated here from parameters to allow using an example
-    // kinematic state to construct KinematicParams
     pub point_c: Point2<f64>,
     pub point_d: Point2<f64>,
     pub point_e: Point2<f64>,
     pub point_f: Point2<f64>
 }
 
+#[derive(Clone, Debug)]
+pub struct JointAngles {
+    pub alpha: f64,
+    pub beta: f64
+}
+
+impl KinematicState {
+    /// Construct new KinematicState from joint angles
+    /// Not all combinations of joint angles might be valid, returns None if no
+    /// solution is possible.
+    /// This intended mostly for testing, not to be extra fast.
+    fn new_forward_kinematics(joint_state: &JointAngles, params: &Params) -> Option<KinematicState> {
+        let point_c = params.point_a + angle_and_length_to_vector(joint_state.alpha, params.len_ac);
+        let point_d = params.point_b + angle_and_length_to_vector(joint_state.beta, params.len_bd);
+        let len_de = params.len_df * params.fd_to_de_scale.norm();
+        let point_e = find_triangle_point(point_c, params.len_ce, point_d, len_de)?;
+        let point_f = 
+    }
+
+    /// Construct new KinematicState from a foot point and parameters.
+    /// Returns None if there is no solution possible.
+    fn new_inverse_kinematics(point_f: Point2<f64>, params: &Params) -> Option<KinematicState> {
+        assert!(params.is_valid(1e-6));
+
+        println!("point_f: {point_f:?}");
+        let point_d = find_triangle_point(params.point_b, params.len_bd, point_f, params.len_df)?;
+        println!("point_d: {point_d:?}");
+
+        let fd_direction = point_d - point_f;
+        let point_e = point_d +
+            fd_direction * params.fd_to_de_scale.x +
+            perpendicular(fd_direction) * params.fd_to_de_scale.y;
+        println!("point_e: {point_e:?}");
+
+        let point_c = find_triangle_point(params.point_a, params.len_ac, point_e, params.len_ce)?;
+        println!("point_c: {point_c:?}");
+
+        Some(KinematicState {
+            point_c,
+            point_d,
+            point_e,
+            point_f
+        })
+    }
+}
+
 /// Create a perpendicular 2D vector to a given vector.
 /// Magnitude is identical to the argument.
 fn perpendicular(v: Vector2<f64>) -> Vector2<f64> {
     Vector2::new(v.y, -v.x)
+}
+
+fn angle_and_length_to_vector(angle: f64, length: f64) -> Vector2<f64> {
+    Vector2::new(angle.cos(), angle.sin()) * length
 }
 
 /// Given two points `point_a` and `point_b` and two trigangle side lengths
@@ -79,31 +132,6 @@ fn find_triangle_point(point_a: Point2<f64>, length_a: f64, point_b: Point2<f64>
     Some(point_c)
 }
 
-fn calculate_state(point_f: Point2<f64>, params: &Params) -> Option<KinematicState> {
-    assert!(params.is_valid(1e-6));
-
-
-    println!("point_f: {point_f:?}");
-    let point_d = find_triangle_point(params.point_b, params.len_bd, point_f, params.len_df)?;
-    println!("point_d: {point_d:?}");
-
-    let fd_direction = point_d - point_f;
-    let point_e = point_d +
-        fd_direction * params.fd_to_de_scale.x +
-        perpendicular(fd_direction) * params.fd_to_de_scale.y;
-    println!("point_e: {point_e:?}");
-
-    let point_c = find_triangle_point(params.point_a, params.len_ac, point_e, params.len_ce)?;
-    println!("point_c: {point_c:?}");
-
-    Some(KinematicState {
-        point_c,
-        point_d,
-        point_e,
-        point_f
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,10 +140,6 @@ mod tests {
     use nalgebra::proptest::vector;
     use nalgebra::Const;
     use approx::assert_relative_eq;
-
-    fn angle_and_length_to_vector(angle: f64, length: f64) -> Vector2<f64> {
-        Vector2::new(angle.cos(), angle.sin()) * length
-    }
 
     fn point2_strategy(min_value: f64, max_value: f64) -> impl Strategy<Value=Point2<f64>> {
         //vector(proptest::num::f64::NORMAL, Const::<2>).prop_map(|x| Point2::from(x))
