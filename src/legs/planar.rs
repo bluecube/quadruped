@@ -77,10 +77,10 @@ impl KinematicState {
 
         let point_f = foot_position;
         let point_d = find_triangle_point(&params.point_b, params.len_bd, &point_f, params.len_df)?;
-        let fd_direction = point_d - point_f;
+        let fd = point_d - point_f;
         let point_e = point_d +
-            fd_direction * params.fd_to_de_scale.x +
-            perpendicular(fd_direction) * params.fd_to_de_scale.y;
+            fd * params.fd_to_de_scale.x +
+            perpendicular(&fd) * params.fd_to_de_scale.y;
 
         let point_c = find_triangle_point(&params.point_a, params.len_ac, &point_e, params.len_ce)?;
 
@@ -118,7 +118,7 @@ impl KinematicState {
 
 /// Create a perpendicular 2D vector to a given vector.
 /// Magnitude is identical to the argument.
-fn perpendicular(v: Vector2<f64>) -> Vector2<f64> {
+fn perpendicular(v: &Vector2<f64>) -> Vector2<f64> {
     Vector2::new(v.y, -v.x)
 }
 
@@ -158,7 +158,7 @@ fn find_triangle_point(point_a: &Point2<f64>, length_a: f64, point_b: &Point2<f6
         None
     } else {
         let s = s_squared.sqrt();
-        let point_c = point_a + ba * t + perpendicular(ba) * s;
+        let point_c = point_a + ba * t + perpendicular(&ba) * s;
         Some(point_c)
     }
 }
@@ -283,7 +283,7 @@ mod tests {
         #[strategy(vector(-1000.0..1000.0, Const::<2>))]
         v: Vector2<f64>
     ) {
-        assert_eq!(v.dot(&perpendicular(v)), 0.0);
+        assert_eq!(v.dot(&perpendicular(&v)), 0.0);
     }
 
     #[proptest]
