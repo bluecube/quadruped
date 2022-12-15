@@ -186,53 +186,23 @@ mod tests {
         }
     }
 
-    fn point2_strategy(min_value: f64, max_value: f64) -> impl Strategy<Value=Point2<f64>> {
-        //vector(proptest::num::f64::NORMAL, Const::<2>).prop_map(|x| Point2::from(x))
-        vector(min_value..max_value, Const::<2>).prop_map(|x| Point2::from(x))
+    /// Strategy for 64bit floating point numbers that minimize to nicely readable integer values
+    fn f64_strategy(range: std::ops::Range<f64>) -> impl Strategy<Value=f64> + Clone {
+        (0f64..1f64, (range.start.floor() as i64)..(range.end.floor() as i64))
+            .prop_filter_map("Value does not fit in the range",
+                move |(fractional, integral)| {
+                    let v = (integral as f64) + fractional;
+                    if range.contains(&v) {
+                        Some(v)
+                    } else {
+                        None
+                    }
+                })
     }
 
-    fn params_strategy(min_value: f64, max_value: f64) -> impl Strategy<Value=Params> {
-        (
-            point2_strategy(-max_value, max_value),
-            0.0..1.0,
-            0.0..std::f64::consts::PI,
-            min_value..max_value,
-            min_value..max_value,
-            min_value..max_value,
-            min_value..max_value,
-            min_value..max_value,
-            0.0..std::f64::consts::PI,
-        ).prop_filter_map(
-            "Invalid params",
-            move |(
-                point_a,
-                point_b_relative_distance, point_b_angle,
-                len_ac, len_bd, len_ce, len_df,
-                len_de,
-                de_relative_angle,
-            )| {
-                let point_b_max_distance = (len_ac + len_ce + len_bd + len_de) / 2.0;
-                let point_b_distance = min_value + (point_b_max_distance - min_value) * point_b_relative_distance;
-                let point_b = point_a + angle_and_length_to_vector(point_b_angle, point_b_distance);
-                let fd_to_de_scale = angle_and_length_to_vector(de_relative_angle, len_de / len_df);
-                let ret = Params {
-                    point_a,
-                    point_b,
-                    len_ac,
-                    len_bd,
-                    len_ce,
-                    len_df,
-
-                    fd_to_de_scale
-                };
-
-                if ret.is_valid(min_value) {
-                    Some(ret)
-                } else {
-                    None
-                }
-            }
-        )
+    fn point2_strategy(min_value: f64, max_value: f64) -> impl Strategy<Value=Point2<f64>> {
+        //vector(proptest::num::f64::NORMAL, Const::<2>).prop_map(|x| Point2::from(x))
+        vector(f64_strategy(min_value..max_value), Const::<2>).prop_map(|x| Point2::from(x))
     }
 
     fn kinematic_state_strategy() -> impl Strategy<Value=KinematicState> {
