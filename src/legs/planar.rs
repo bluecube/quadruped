@@ -1,4 +1,4 @@
-use nalgebra::{Point2, Vector2, distance};
+use nalgebra::{distance, Point2, Vector2};
 
 /// Definition of leg geometry, see leg-schematic.svg for description of the values
 /// Note that some of the parameters are redundant for simpler calculation
@@ -25,37 +25,58 @@ pub struct KinematicState {
     pub point_c: Point2<f64>,
     pub point_d: Point2<f64>,
     pub point_e: Point2<f64>,
-    pub point_f: Point2<f64>
+    pub point_f: Point2<f64>,
 }
 
 #[derive(Clone, Debug)]
 pub struct JointAngles {
     pub alpha: f64,
-    pub beta: f64
+    pub beta: f64,
 }
 
 impl KinematicState {
     /// Construct new KinematicState from joint angles
     /// Not all combinations of joint angles might be valid, returns None if no
     /// solution is possible.
-    pub fn with_joint_angles(joint_angles: &JointAngles, params: &Params) -> Option<KinematicState> {
-        let point_c = params.point_a + angle_and_length_to_vector(joint_angles.alpha, params.len_ac);
+    pub fn with_joint_angles(
+        joint_angles: &JointAngles,
+        params: &Params,
+    ) -> Option<KinematicState> {
+        let point_c =
+            params.point_a + angle_and_length_to_vector(joint_angles.alpha, params.len_ac);
         let point_d = params.point_b + angle_and_length_to_vector(joint_angles.beta, params.len_bd);
         let point_e = find_triangle_point(&point_c, params.len_ce, &point_d, params.len_de)?;
         let point_f = params.f_from_ed.apply(&point_e, &point_d);
 
-        Some(KinematicState { point_a: params.point_a, point_b: params.point_b, point_c, point_d, point_e, point_f })
+        Some(KinematicState {
+            point_a: params.point_a,
+            point_b: params.point_b,
+            point_c,
+            point_d,
+            point_e,
+            point_f,
+        })
     }
 
     /// Construct new KinematicState from a foot point and parameters.
     /// Returns None if there is no solution possible.
-    pub fn with_foot_position(foot_position: Point2<f64>, params: &Params) -> Option<KinematicState> {
+    pub fn with_foot_position(
+        foot_position: Point2<f64>,
+        params: &Params,
+    ) -> Option<KinematicState> {
         let point_f = foot_position;
         let point_d = find_triangle_point(&params.point_b, params.len_bd, &point_f, params.len_df)?;
         let point_e = params.e_from_fd.apply(&point_f, &point_d);
         let point_c = find_triangle_point(&params.point_a, params.len_ac, &point_e, params.len_ce)?;
 
-        Some(KinematicState { point_a: params.point_a, point_b: params.point_b, point_c, point_d, point_e, point_f })
+        Some(KinematicState {
+            point_a: params.point_a,
+            point_b: params.point_b,
+            point_c,
+            point_d,
+            point_e,
+            point_f,
+        })
     }
 
     #[cfg(test)]
@@ -79,7 +100,10 @@ impl KinematicState {
     }
 
     pub fn get_joint_angles(&self) -> JointAngles {
-        JointAngles { alpha: vector_to_angle(self.point_c - self.point_a), beta: vector_to_angle(self.point_d - self.point_b) }
+        JointAngles {
+            alpha: vector_to_angle(self.point_c - self.point_a),
+            beta: vector_to_angle(self.point_d - self.point_b),
+        }
     }
 }
 
@@ -98,7 +122,7 @@ impl ThirdPointRelativePosition {
         let bc = c - b;
         ThirdPointRelativePosition {
             longitudal: ab.dot(&bc) / ab.norm_squared(),
-            lateral: perpendicular(&ab).dot(&bc) / ab.norm_squared()
+            lateral: perpendicular(&ab).dot(&bc) / ab.norm_squared(),
         }
     }
 
@@ -128,7 +152,12 @@ fn vector_to_angle(v: Vector2<f64>) -> f64 {
 /// `length_a` (= |AC|) and `length_b` (= |BC|), calculates point C.
 /// This point is always to the left of the AB line.
 /// If no such triangle exists, returns None.
-fn find_triangle_point(point_a: &Point2<f64>, length_a: f64, point_b: &Point2<f64>, length_b: f64) -> Option<Point2<f64>> {
+fn find_triangle_point(
+    point_a: &Point2<f64>,
+    length_a: f64,
+    point_b: &Point2<f64>,
+    length_b: f64,
+) -> Option<Point2<f64>> {
     // TODO: Maybe also return an angle between X axis and AC.
 
     assert!(length_a >= 0.0);
@@ -159,31 +188,44 @@ fn find_triangle_point(point_a: &Point2<f64>, length_a: f64, point_b: &Point2<f6
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proptest::prelude::*;
-    use test_strategy::proptest;
-    use test_case::test_case;
-    use nalgebra::proptest::vector;
-    use nalgebra::{Const, distance_squared};
     use approx::assert_relative_eq;
     use more_asserts::*;
+    use nalgebra::proptest::vector;
+    use nalgebra::{distance_squared, Const};
+    use proptest::prelude::*;
+    use test_case::test_case;
+    use test_strategy::proptest;
 
     macro_rules! assert_points_approx_eq {
         ($p1:expr, $p2:expr, $max_dist:expr) => {
-            assert!(distance($p1, $p2) <= $max_dist,
-            "assert_points_approx_eq!({}, {}, {})
+            assert!(
+                distance($p1, $p2) <= $max_dist,
+                "assert_points_approx_eq!({}, {}, {})
 
     left  = {:?}
     right = {:?}
     distance(left, right) = {} > {}
 
-", stringify!($p1), stringify!($p2), stringify!($dist), $p1, $p2, distance($p2, $p1), $max_dist)
-        }
+",
+                stringify!($p1),
+                stringify!($p2),
+                stringify!($dist),
+                $p1,
+                $p2,
+                distance($p2, $p1),
+                $max_dist
+            )
+        };
     }
 
     /// Strategy for 64bit floating point numbers that minimize to nicely readable integer values
-    fn f64_strategy(range: std::ops::Range<f64>) -> impl Strategy<Value=f64> + Clone {
-        (0f64..1f64, (range.start.floor() as i64)..(range.end.floor() as i64))
-            .prop_filter_map("Value does not fit in the range",
+    fn f64_strategy(range: std::ops::Range<f64>) -> impl Strategy<Value = f64> + Clone {
+        (
+            0f64..1f64,
+            (range.start.floor() as i64)..(range.end.floor() as i64),
+        )
+            .prop_filter_map(
+                "Value does not fit in the range",
                 move |(fractional, integral)| {
                     let v = (integral as f64) + fractional;
                     if range.contains(&v) {
@@ -191,31 +233,36 @@ mod tests {
                     } else {
                         None
                     }
-                })
+                },
+            )
     }
 
-    fn point2_strategy(min_value: f64, max_value: f64) -> impl Strategy<Value=Point2<f64>> {
+    fn point2_strategy(min_value: f64, max_value: f64) -> impl Strategy<Value = Point2<f64>> {
         //vector(proptest::num::f64::NORMAL, Const::<2>).prop_map(|x| Point2::from(x))
         vector(f64_strategy(min_value..max_value), Const::<2>).prop_map(|x| Point2::from(x))
     }
 
-    fn kinematic_state_strategy() -> impl Strategy<Value=KinematicState> {
-        proptest::collection::vec(point2_strategy(-1000.0, 1000.0), 6)
-            .prop_filter_map(
-                "Coincident points",
-                |points| {
-                    for i in 0..points.len() {
-                        for j in i+1..points.len() {
-                            if distance(&points[i], &points[j]) < 1e-3 {
-                                return None;
-                            }
+    fn kinematic_state_strategy() -> impl Strategy<Value = KinematicState> {
+        proptest::collection::vec(point2_strategy(-1000.0, 1000.0), 6).prop_filter_map(
+            "Coincident points",
+            |points| {
+                for i in 0..points.len() {
+                    for j in i + 1..points.len() {
+                        if distance(&points[i], &points[j]) < 1e-3 {
+                            return None;
                         }
                     }
-                    Some(KinematicState {
-                        point_a: points[0], point_b: points[1], point_c: points[2], point_d: points[3], point_e: points[4], point_f: points[5]
-                    })
                 }
-            )
+                Some(KinematicState {
+                    point_a: points[0],
+                    point_b: points[1],
+                    point_c: points[2],
+                    point_d: points[3],
+                    point_e: points[4],
+                    point_f: points[5],
+                })
+            },
+        )
     }
 
     /// Kinematic state taken from the sketch in leg-schematic.svg
@@ -231,29 +278,26 @@ mod tests {
     }
 
     /// Calculate distance between two kinematic states.
-    fn kinematic_state_mean_square_deviation(state1: &KinematicState, state2: &KinematicState) -> f64 {
-        (
-            distance_squared(&state2.point_a, &state1.point_a) +
-            distance_squared(&state2.point_b, &state1.point_b) +
-            distance_squared(&state2.point_c, &state1.point_c) +
-            distance_squared(&state2.point_d, &state1.point_d) +
-            distance_squared(&state2.point_e, &state1.point_e) +
-            distance_squared(&state2.point_f, &state1.point_f)
-        ) / 6.0
+    fn kinematic_state_mean_square_deviation(
+        state1: &KinematicState,
+        state2: &KinematicState,
+    ) -> f64 {
+        (distance_squared(&state2.point_a, &state1.point_a)
+            + distance_squared(&state2.point_b, &state1.point_b)
+            + distance_squared(&state2.point_c, &state1.point_c)
+            + distance_squared(&state2.point_d, &state1.point_d)
+            + distance_squared(&state2.point_e, &state1.point_e)
+            + distance_squared(&state2.point_f, &state1.point_f))
+            / 6.0
     }
 
     #[proptest]
     fn third_point_relative_position(
-        #[strategy(point2_strategy(-1000.0, 1000.0))]
-        a1: Point2<f64>,
-        #[strategy(point2_strategy(-1000.0, 1000.0))]
-        b1: Point2<f64>,
-        #[strategy(point2_strategy(-1000.0, 1000.0))]
-        c1: Point2<f64>,
-        #[strategy(point2_strategy(-1000.0, 1000.0))]
-        a2: Point2<f64>,
-        #[strategy(point2_strategy(-1000.0, 1000.0))]
-        b2: Point2<f64>,
+        #[strategy(point2_strategy(-1000.0, 1000.0))] a1: Point2<f64>,
+        #[strategy(point2_strategy(-1000.0, 1000.0))] b1: Point2<f64>,
+        #[strategy(point2_strategy(-1000.0, 1000.0))] c1: Point2<f64>,
+        #[strategy(point2_strategy(-1000.0, 1000.0))] a2: Point2<f64>,
+        #[strategy(point2_strategy(-1000.0, 1000.0))] b2: Point2<f64>,
     ) {
         prop_assume!(distance_squared(&a1, &b1) > 1e-3);
         prop_assume!(distance_squared(&a2, &b2) > 1e-3);
@@ -279,29 +323,32 @@ mod tests {
 
     #[proptest]
     fn perpendicular_has_zero_dot_product(
-        #[strategy(vector(-1000.0..1000.0, Const::<2>))]
-        v: Vector2<f64>
+        #[strategy(vector(-1000.0..1000.0, Const::<2>))] v: Vector2<f64>,
     ) {
         assert_eq!(v.dot(&perpendicular(&v)), 0.0);
     }
 
     #[proptest]
     fn vector_to_angle_roundtrip(
-        #[strategy(-std::f64::consts::PI..std::f64::consts::PI)]
-        angle: f64,
-        #[strategy(1.0..1000.0)]
-        length: f64,
+        #[strategy(-std::f64::consts::PI..std::f64::consts::PI)] angle: f64,
+        #[strategy(1.0..1000.0)] length: f64,
     ) {
         let v = angle_and_length_to_vector(angle, length);
         let angle2 = vector_to_angle(v);
 
-        assert_relative_eq!(angle2, angle, max_relative=1e-6);
+        assert_relative_eq!(angle2, angle, max_relative = 1e-6);
     }
 
     #[test_case(Point2::new(0.0, 0.0), 5.0, Point2::new(3.0, 0.0), 4.0, Some(Point2::new(3.0, -4.0)); "pythagorean_triangle")]
     #[test_case(Point2::new(0.0, 0.0), 1.0, Point2::new(3.0, 0.0), 1.0, None; "too_short")]
     #[test_case(Point2::new(0.0, 0.0), 10.0, Point2::new(3.0, 0.0), 1.0, None; "too_long")]
-    fn find_triangle_point_examples(point_a: Point2<f64>, length_a: f64, point_b: Point2<f64>, length_b: f64, expected: Option<Point2<f64>>) {
+    fn find_triangle_point_examples(
+        point_a: Point2<f64>,
+        length_a: f64,
+        point_b: Point2<f64>,
+        length_b: f64,
+        expected: Option<Point2<f64>>,
+    ) {
         let result = find_triangle_point(&point_a, length_a, &point_b, length_b);
 
         match (result, expected) {
@@ -312,34 +359,28 @@ mod tests {
 
     #[proptest]
     fn find_triangle_point_valid(
-        #[strategy(point2_strategy(-1000.0, 1000.0))]
-        point_a: Point2<f64>,
-        #[strategy(point2_strategy(-1000.0, 1000.0))]
-        point_b: Point2<f64>,
-        #[strategy(point2_strategy(-1000.0, 1000.0))]
-        point_c: Point2<f64>,
+        #[strategy(point2_strategy(-1000.0, 1000.0))] point_a: Point2<f64>,
+        #[strategy(point2_strategy(-1000.0, 1000.0))] point_b: Point2<f64>,
+        #[strategy(point2_strategy(-1000.0, 1000.0))] point_c: Point2<f64>,
     ) {
         let length_a = distance(&point_a, &point_c);
         let length_b = distance(&point_b, &point_c);
 
         let result = find_triangle_point(&point_a, length_a, &point_b, length_b).unwrap();
 
-        assert_relative_eq!(distance(&point_a, &result), length_a, max_relative=1e-6);
-        assert_relative_eq!(distance(&point_b, &result), length_b, max_relative=1e-6);
+        assert_relative_eq!(distance(&point_a, &result), length_a, max_relative = 1e-6);
+        assert_relative_eq!(distance(&point_b, &result), length_b, max_relative = 1e-6);
 
         // assert_points_approx_eq!(point_c, result, 1e-6);
-            // Does not work 50% of time because of the "arbitrary" choice of one of the solutions
+        // Does not work 50% of time because of the "arbitrary" choice of one of the solutions
     }
 
     /// Verify that find_triangle_point works for output points that lie exactly on the AB line.
     #[proptest]
     fn find_triangle_point_on_the_line(
-        #[strategy(point2_strategy(-100.0, 100.0))]
-        point_a: Point2<f64>,
-        #[strategy(point2_strategy(-100.0, 100.0))]
-        point_b: Point2<f64>,
-        #[strategy(-10.5..9.5)]
-        point_c_relative_position: f64
+        #[strategy(point2_strategy(-100.0, 100.0))] point_a: Point2<f64>,
+        #[strategy(point2_strategy(-100.0, 100.0))] point_b: Point2<f64>,
+        #[strategy(-10.5..9.5)] point_c_relative_position: f64,
     ) {
         let base = distance(&point_a, &point_b);
 
@@ -353,129 +394,127 @@ mod tests {
 
     #[proptest]
     fn find_triangle_point_too_short(
-        #[strategy(point2_strategy(-1000.0, 1000.0))]
-        point_a: Point2<f64>,
-        #[strategy(point2_strategy(-1000.0, 1000.0))]
-        point_b: Point2<f64>,
-        #[strategy(0.0..1.0)]
-        ab_fraction: f64,
-        #[strategy(0.0..1.0)]
-        a_fraction: f64
+        #[strategy(point2_strategy(-1000.0, 1000.0))] point_a: Point2<f64>,
+        #[strategy(point2_strategy(-1000.0, 1000.0))] point_b: Point2<f64>,
+        #[strategy(0.0..1.0)] ab_fraction: f64,
+        #[strategy(0.0..1.0)] a_fraction: f64,
     ) {
         let length_ab = distance(&point_a, &point_b) * ab_fraction;
         let length_a = length_ab * a_fraction;
         let length_b = length_ab - length_a;
 
-        assert_eq!(find_triangle_point(&point_a, length_a, &point_b, length_b), None);
+        assert_eq!(
+            find_triangle_point(&point_a, length_a, &point_b, length_b),
+            None
+        );
     }
 
     #[proptest]
     fn find_triangle_point_too_long(
-        #[strategy(point2_strategy(-1000.0, 1000.0))]
-        point_a: Point2<f64>,
-        #[strategy(point2_strategy(-1000.0, 1000.0))]
-        point_b: Point2<f64>,
-        #[strategy(1.0..100.0)]
-        a_fraction: f64,
-        #[strategy(0.0..1.0)]
-        b_fraction: f64
+        #[strategy(point2_strategy(-1000.0, 1000.0))] point_a: Point2<f64>,
+        #[strategy(point2_strategy(-1000.0, 1000.0))] point_b: Point2<f64>,
+        #[strategy(1.0..100.0)] a_fraction: f64,
+        #[strategy(0.0..1.0)] b_fraction: f64,
     ) {
         let d = distance(&point_a, &point_b);
         let length_a = d * a_fraction;
         let length_b = (length_a - d) * b_fraction;
 
-        assert_eq!(find_triangle_point(&point_a, length_a, &point_b, length_b), None);
+        assert_eq!(
+            find_triangle_point(&point_a, length_a, &point_b, length_b),
+            None
+        );
     }
 
-/*
-    #[test]
-    fn forward_kinematics_joint_angles_roundtrip_example() {
-        let ks = known_good_kinematic_state();
-        let params = ks.get_params();
-        let joint_angles = ks.get_joint_angles();
-        let foot_position = ks.get_foot_position();
+    /*
+        #[test]
+        fn forward_kinematics_joint_angles_roundtrip_example() {
+            let ks = known_good_kinematic_state();
+            let params = ks.get_params();
+            let joint_angles = ks.get_joint_angles();
+            let foot_position = ks.get_foot_position();
 
-        let ks2 = KinematicState::with_joint_angles(&joint_angles, &params).unwrap();
+            let ks2 = KinematicState::with_joint_angles(&joint_angles, &params).unwrap();
 
-        dbg!(&ks);
-        dbg!(&ks2);
+            dbg!(&ks);
+            dbg!(&ks2);
 
-        assert_points_approx_eq!(&ks2.get_foot_position(), &foot_position, 1e-6);
-        assert_lt!(kinematic_state_mean_square_deviation(&ks, &ks2), 1e-3);
-    }
+            assert_points_approx_eq!(&ks2.get_foot_position(), &foot_position, 1e-6);
+            assert_lt!(kinematic_state_mean_square_deviation(&ks, &ks2), 1e-3);
+        }
 
-    #[test]
-    fn forward_kinematics_foot_position_roundtrip_example() {
-        let ks = known_good_kinematic_state();
-        let params = ks.get_params();
-        let foot_position = ks.get_foot_position();
+        #[test]
+        fn forward_kinematics_foot_position_roundtrip_example() {
+            let ks = known_good_kinematic_state();
+            let params = ks.get_params();
+            let foot_position = ks.get_foot_position();
 
-        dbg!(&ks);
-        dbg!(&foot_position);
+            dbg!(&ks);
+            dbg!(&foot_position);
 
-        let ks2 = KinematicState::with_foot_position(foot_position.clone(), &params).unwrap();
+            let ks2 = KinematicState::with_foot_position(foot_position.clone(), &params).unwrap();
 
-        dbg!(&ks2);
+            dbg!(&ks2);
 
-        assert_points_approx_eq!(&ks2.get_foot_position(), &foot_position, 1e-6);
-        assert_lt!(kinematic_state_mean_square_deviation(&ks, &ks2), 1e-3);
-    }
+            assert_points_approx_eq!(&ks2.get_foot_position(), &foot_position, 1e-6);
+            assert_lt!(kinematic_state_mean_square_deviation(&ks, &ks2), 1e-3);
+        }
 
-    #[proptest]
-    fn forward_kinematics_joint_angles_roundtrip(
-        #[strategy(kinematic_state_strategy())]
-        ks: KinematicState,
-    ) {
-        let params = ks.get_params();
-        let joint_angles = ks.get_joint_angles();
-        let foot_position = ks.get_foot_position();
+        #[proptest]
+        fn forward_kinematics_joint_angles_roundtrip(
+            #[strategy(kinematic_state_strategy())]
+            ks: KinematicState,
+        ) {
+            let params = ks.get_params();
+            let joint_angles = ks.get_joint_angles();
+            let foot_position = ks.get_foot_position();
 
-        dbg!(&ks);
-        dbg!(&joint_angles);
+            dbg!(&ks);
+            dbg!(&joint_angles);
 
-        let ks2 = KinematicState::with_joint_angles(&joint_angles, &params).unwrap();
+            let ks2 = KinematicState::with_joint_angles(&joint_angles, &params).unwrap();
 
-        dbg!(&ks2);
+            dbg!(&ks2);
 
-        assert_points_approx_eq!(&ks2.get_foot_position(), &foot_position, 1e-3);
-        assert_lt!(kinematic_state_mean_square_deviation(&ks, &ks2), 1e-3);
-    }
+            assert_points_approx_eq!(&ks2.get_foot_position(), &foot_position, 1e-3);
+            assert_lt!(kinematic_state_mean_square_deviation(&ks, &ks2), 1e-3);
+        }
 
-    #[proptest]
-    fn forward_kinematics_foot_position_roundtrip(
-        #[strategy(kinematic_state_strategy())]
-        ks: KinematicState,
-    ) {
-        let params = ks.get_params();
-        let joint_angles = ks.get_joint_angles();
-        let foot_position = ks.get_foot_position();
+        #[proptest]
+        fn forward_kinematics_foot_position_roundtrip(
+            #[strategy(kinematic_state_strategy())]
+            ks: KinematicState,
+        ) {
+            let params = ks.get_params();
+            let joint_angles = ks.get_joint_angles();
+            let foot_position = ks.get_foot_position();
 
-        let ks2 = KinematicState::with_foot_position(foot_position.clone(), &params).unwrap();
+            let ks2 = KinematicState::with_foot_position(foot_position.clone(), &params).unwrap();
 
-        assert_points_approx_eq!(&ks2.get_foot_position(), foot_position, 1e-6);
-    }
+            assert_points_approx_eq!(&ks2.get_foot_position(), foot_position, 1e-6);
+        }
 
-    #[proptest]
-    fn calculate_state_preserves_segment_lengths(
-        #[strategy(point2_strategy(-1000.0, 1000.0))]
-        point_f: Point2<f64>,
-        #[strategy(params_strategy(1e-6, 1000.0))]
-        params: Params
-    ) {
-        //let params = simple_test_params();
-        println!("point_f: {point_f}, params: {params:?}");
-        match KinematicState::new_inverse_kinematics(point_f, &params) {
-            None => {
-                println!("No solution");
-                prop_assume!(false); // We're not concerned with non-solutions now
-            }
-            Some(state) => {
-                assert_relative_eq!(distance(&params.point_a, &state.point_c), params.len_ac, max_relative=1e-6);
-                assert_relative_eq!(distance(&params.point_b, &state.point_d), params.len_bd, max_relative=1e-6);
-                assert_relative_eq!(distance(&state.point_c, &state.point_e), params.len_ce, max_relative=1e-6);
-                assert_relative_eq!(distance(&state.point_d, &state.point_f), params.len_df, max_relative=1e-6);
+        #[proptest]
+        fn calculate_state_preserves_segment_lengths(
+            #[strategy(point2_strategy(-1000.0, 1000.0))]
+            point_f: Point2<f64>,
+            #[strategy(params_strategy(1e-6, 1000.0))]
+            params: Params
+        ) {
+            //let params = simple_test_params();
+            println!("point_f: {point_f}, params: {params:?}");
+            match KinematicState::new_inverse_kinematics(point_f, &params) {
+                None => {
+                    println!("No solution");
+                    prop_assume!(false); // We're not concerned with non-solutions now
+                }
+                Some(state) => {
+                    assert_relative_eq!(distance(&params.point_a, &state.point_c), params.len_ac, max_relative=1e-6);
+                    assert_relative_eq!(distance(&params.point_b, &state.point_d), params.len_bd, max_relative=1e-6);
+                    assert_relative_eq!(distance(&state.point_c, &state.point_e), params.len_ce, max_relative=1e-6);
+                    assert_relative_eq!(distance(&state.point_d, &state.point_f), params.len_df, max_relative=1e-6);
+                }
             }
         }
-    }
-*/
+    */
 }
