@@ -1,4 +1,6 @@
 use nalgebra::{distance, Point2, Vector2};
+use serde::{Serialize, Deserialize};
+use display_json::DebugAsJson;
 
 /// Definition of leg geometry, see leg-schematic.svg for description of the values
 /// Note that some of the parameters are redundant for simpler calculation
@@ -18,7 +20,7 @@ pub struct Params {
 
 /// Positions of points in the 2D leg plane view
 /// This is a necessary half way form when doing both forward and inverse kinematics.
-#[derive(Clone, Debug)]
+#[derive(Clone, DebugAsJson, Serialize, Deserialize)]
 pub struct KinematicState {
     pub point_a: Point2<f64>,
     pub point_b: Point2<f64>,
@@ -426,40 +428,40 @@ mod tests {
         );
     }
 
+    #[test]
+    fn forward_kinematics_joint_angles_roundtrip_example() {
+        let ks = known_good_kinematic_state();
+        let params = ks.get_params();
+        let joint_angles = ks.get_joint_angles();
+        let foot_position = ks.get_foot_position();
+
+        let ks2 = KinematicState::with_joint_angles(&joint_angles, &params).unwrap();
+
+        dbg!(&ks);
+        dbg!(&ks2);
+
+        assert_points_approx_eq!(&ks2.get_foot_position(), &foot_position, 1e-6);
+        assert_lt!(kinematic_state_mean_square_deviation(&ks, &ks2), 1e-3);
+    }
+
+    #[test]
+    fn forward_kinematics_foot_position_roundtrip_example() {
+        let ks = known_good_kinematic_state();
+        let params = ks.get_params();
+        let foot_position = ks.get_foot_position();
+
+        dbg!(&ks);
+        dbg!(&foot_position);
+
+        let ks2 = KinematicState::with_foot_position(foot_position.clone(), &params).unwrap();
+
+        dbg!(&ks2);
+
+        assert_points_approx_eq!(&ks2.get_foot_position(), &foot_position, 1e-6);
+        assert_lt!(kinematic_state_mean_square_deviation(&ks, &ks2), 1e-3);
+    }
+
     /*
-        #[test]
-        fn forward_kinematics_joint_angles_roundtrip_example() {
-            let ks = known_good_kinematic_state();
-            let params = ks.get_params();
-            let joint_angles = ks.get_joint_angles();
-            let foot_position = ks.get_foot_position();
-
-            let ks2 = KinematicState::with_joint_angles(&joint_angles, &params).unwrap();
-
-            dbg!(&ks);
-            dbg!(&ks2);
-
-            assert_points_approx_eq!(&ks2.get_foot_position(), &foot_position, 1e-6);
-            assert_lt!(kinematic_state_mean_square_deviation(&ks, &ks2), 1e-3);
-        }
-
-        #[test]
-        fn forward_kinematics_foot_position_roundtrip_example() {
-            let ks = known_good_kinematic_state();
-            let params = ks.get_params();
-            let foot_position = ks.get_foot_position();
-
-            dbg!(&ks);
-            dbg!(&foot_position);
-
-            let ks2 = KinematicState::with_foot_position(foot_position.clone(), &params).unwrap();
-
-            dbg!(&ks2);
-
-            assert_points_approx_eq!(&ks2.get_foot_position(), &foot_position, 1e-6);
-            assert_lt!(kinematic_state_mean_square_deviation(&ks, &ks2), 1e-3);
-        }
-
         #[proptest]
         fn forward_kinematics_joint_angles_roundtrip(
             #[strategy(kinematic_state_strategy())]
