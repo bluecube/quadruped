@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc eb97e7f421effe256fc747e6d5294d52553fe997e8c0f1a3569e2a1321536300 # shrinks to input = _FindTrianglePointOnTheLineArgs { point_a: [70.64797328484165, 9.928876361259011], point_b: [-56.22745961224728, 34.25290215520156], point_c_relative_position: 65.81408041879502 }
