@@ -1,17 +1,16 @@
-use quadruped::legs::planar::KinematicState;
-use ggez::{
-    event,
-    glam,
-    graphics::{self, Color, MeshBuilder, Mesh, DrawMode},
-    Context, GameResult,
-    conf::WindowSetup,
-};
-use nalgebra::Point2;
 use clap;
 use clap::Parser;
+use ggez::{
+    Context, GameResult,
+    conf::{WindowMode, WindowSetup},
+    event, glam,
+    graphics::{self, Color, DrawMode, Mesh, MeshBuilder},
+};
+use nalgebra::Point2;
+use quadruped::legs::planar::KinematicState;
 use serde_json;
 
-#[derive(Debug,Parser)]
+#[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
 struct Args {
     #[arg(value_parser = |s:&str| serde_json::from_str::<KinematicState>(s))]
@@ -28,7 +27,7 @@ fn convert_pt(p: Point2<f64>) -> glam::Vec2 {
 
 fn kinematic_state_mesh(ctx: &mut Context, ks: &KinematicState) -> GameResult<Mesh> {
     let line_color = (128, 128, 128).into();
-    let fill_color = (64, 64, 96).into();
+    let fill_color = (64, 64, 64).into();
     let point_radius = 8.0;
     Ok(Mesh::from_data(
         ctx,
@@ -44,10 +43,7 @@ fn kinematic_state_mesh(ctx: &mut Context, ks: &KinematicState) -> GameResult<Me
             )?
             .polyline(
                 DrawMode::stroke(2.0),
-                &[
-                    convert_pt(ks.point_b),
-                    convert_pt(ks.point_d),
-                ],
+                &[convert_pt(ks.point_b), convert_pt(ks.point_d)],
                 line_color,
             )?
             .polygon(
@@ -71,60 +67,60 @@ fn kinematic_state_mesh(ctx: &mut Context, ks: &KinematicState) -> GameResult<Me
             .circle(
                 DrawMode::stroke(2.0),
                 convert_pt(ks.point_a),
-                point_radius * 1.5,
+                point_radius,
                 1.0,
-                line_color
-            )?
-            .circle(
-                DrawMode::stroke(2.0),
-                convert_pt(ks.point_b),
-                point_radius * 1.5,
-                1.0,
-                line_color
+                (0xff, 0x00, 0x00).into(),
             )?
             .circle(
                 DrawMode::stroke(2.0),
                 convert_pt(ks.point_a),
-                point_radius,
+                point_radius * 1.5,
                 1.0,
-                line_color
+                (0xff, 0x00, 0x00).into(),
             )?
             .circle(
                 DrawMode::stroke(2.0),
                 convert_pt(ks.point_b),
                 point_radius,
                 1.0,
-                line_color
+                (0x00, 0xff, 0x00).into(),
             )?
             .circle(
-                DrawMode::stroke(2.0),
+                DrawMode::stroke(3.0),
+                convert_pt(ks.point_b),
+                point_radius * 1.5,
+                1.0,
+                (0x00, 0xff, 0x00).into(),
+            )?
+            .circle(
+                DrawMode::stroke(3.0),
                 convert_pt(ks.point_c),
                 point_radius,
                 1.0,
-                line_color
+                (0x00, 0x00, 0xff).into(),
             )?
             .circle(
-                DrawMode::stroke(2.0),
+                DrawMode::stroke(3.0),
                 convert_pt(ks.point_d),
                 point_radius,
                 1.0,
-                line_color
+                (0xff, 0x66, 0x00).into(),
             )?
             .circle(
-                DrawMode::stroke(2.0),
+                DrawMode::stroke(3.0),
                 convert_pt(ks.point_e),
                 point_radius,
                 1.0,
-                line_color
+                (0x66, 0x00, 0xff).into(),
             )?
             .circle(
-                DrawMode::stroke(2.0),
+                DrawMode::stroke(3.0),
                 convert_pt(ks.point_f),
                 point_radius,
                 1.0,
-                line_color
+                (0xff, 0xff, 0xff).into(),
             )?
-            .build()
+            .build(),
     ))
 }
 
@@ -153,8 +149,7 @@ impl event::EventHandler<ggez::GameError> for MainState {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
-        let mut canvas =
-            graphics::Canvas::from_frame(ctx, graphics::Color::from([0.1, 0.2, 0.3, 1.0]));
+        let mut canvas = graphics::Canvas::from_frame(ctx, Color::from((0xa, 0xa, 0xa)));
 
         canvas.draw(&self.mesh, glam::Vec2::new(0.0, 0.0));
 
@@ -168,10 +163,8 @@ pub fn main() -> GameResult {
     let args = Args::parse();
 
     let (mut ctx, event_loop) = ggez::ContextBuilder::new("Leg 2D visualisation", "cube")
-        .window_setup(
-            WindowSetup::default()
-            .title("2D leg visualisation"
-        ))
+        .window_setup(WindowSetup::default().title("2D leg visualisation"))
+        .window_mode(WindowMode::default().resizable(true))
         .build()?;
     let state = MainState::new(&mut ctx, &args.kinematic_state.unwrap_or_else(example_ks))?;
     event::run(ctx, event_loop, state);
