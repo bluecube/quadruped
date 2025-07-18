@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc d8320710cd4961b0332ab88ee2dd0e7dfac586b883ecc6e0fcb8ec3e70d51a84 # shrinks to input = _OnTheLineArgs { point_a: [-87.5284180384678, 17.60477040922712], point_b: [73.0, 90.0], point_c_relative_position: 0.0, left: false }

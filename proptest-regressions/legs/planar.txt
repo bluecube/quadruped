@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc eb97e7f421effe256fc747e6d5294d52553fe997e8c0f1a3569e2a1321536300 # shrinks to input = _FindTrianglePointOnTheLineArgs { point_a: [70.64797328484165, 9.928876361259011], point_b: [-56.22745961224728, 34.25290215520156], point_c_relative_position: 65.81408041879502 }
+cc 1c5888a1fbd13c52dbb8c297db484ae808e543a87585da9cd0018570c8c4f877 # shrinks to input = _ForwardKinematicsJointAnglesRoundtripArgs { ks: KinematicState { point_a: [0.0, 0.0], point_b: [0.0, -1.0], point_c: [309.0, 492.0], point_d: [0.0, 1.0], point_e: [0.0, -2.0], point_f: [0.0, 2.0] } }
