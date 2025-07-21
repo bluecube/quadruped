@@ -289,8 +289,8 @@ impl ThirdPointRelativePosition {
         let ab = b - a;
         let bc = c - b;
         ThirdPointRelativePosition {
-            longitudal: ab.dot(&bc) / ab.norm_squared(),
-            lateral: -ab.perp(&bc) / ab.norm_squared(),
+            longitudal: bc.dot(&ab) / ab.norm_squared(),
+            lateral: bc.perp(&ab) / ab.norm_squared(),
         }
     }
 
