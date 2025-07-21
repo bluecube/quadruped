@@ -309,7 +309,7 @@ mod tests {
     use more_asserts::{assert_gt, assert_lt};
     use nalgebra::distance_squared;
     use proptest::prelude::*;
-    use std::{f32::consts::FRAC_PI_8, f64::consts::FRAC_PI_4, panic};
+    use std::{f64::consts::FRAC_PI_4, panic};
     use test_strategy::proptest;
 
     fn kinematic_state_strategy() -> impl Strategy<Value = KinematicState> {
