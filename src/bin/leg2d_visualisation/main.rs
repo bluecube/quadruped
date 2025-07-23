@@ -1,4 +1,3 @@
-use clap;
 use clap::Parser;
 use ggez::{
     Context, GameResult,
@@ -8,13 +7,12 @@ use ggez::{
 };
 use nalgebra::Point2;
 use quadruped::legs::planar::KinematicState;
-use serde_json;
 
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
 struct Args {
-    #[arg(value_parser = |s:&str| serde_json::from_str::<KinematicState>(s))]
-    kinematic_state: Option<KinematicState>,
+    #[arg(value_parser = |s:&str| serde_json::from_str::<KinematicState<f64>>(s))]
+    kinematic_state: Option<KinematicState<f64>>,
 }
 
 struct MainState {
@@ -25,7 +23,7 @@ fn convert_pt(p: Point2<f64>) -> glam::Vec2 {
     glam::Vec2::new(300.0 + 20.0 * -p.x as f32, 200.0 + 20.0 * -p.y as f32)
 }
 
-fn kinematic_state_mesh(ctx: &mut Context, ks: &KinematicState) -> GameResult<Mesh> {
+fn kinematic_state_mesh(ctx: &mut Context, ks: &KinematicState<f64>) -> GameResult<Mesh> {
     let line_color = (128, 128, 128).into();
     let fill_color = (64, 64, 64).into();
     let point_radius = 8.0;
@@ -125,7 +123,7 @@ fn kinematic_state_mesh(ctx: &mut Context, ks: &KinematicState) -> GameResult<Me
 }
 
 /// Kinematic state taken from the sketch in leg-schematic.svg
-fn example_ks() -> KinematicState {
+fn example_ks() -> KinematicState<f64> {
     KinematicState {
         point_a: Point2::new(0.0, 0.0),
         point_b: Point2::new(-6.0, -7.0),
@@ -137,7 +135,7 @@ fn example_ks() -> KinematicState {
 }
 
 impl MainState {
-    fn new(ctx: &mut Context, ks: &KinematicState) -> GameResult<MainState> {
+    fn new(ctx: &mut Context, ks: &KinematicState<f64>) -> GameResult<MainState> {
         let mesh = kinematic_state_mesh(ctx, ks)?;
         Ok(MainState { mesh })
     }

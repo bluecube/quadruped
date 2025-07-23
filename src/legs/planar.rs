@@ -1,59 +1,65 @@
 use std::f64::consts::PI;
 
-use display_json::DebugAsJson;
-use nalgebra::{Point2, distance};
+use nalgebra::{Point2, SimdBool, SimdValue, Vector2, distance};
 use serde::{Deserialize, Serialize};
+use simba::simd::SimdRealField;
 
 use crate::util::{
     find_triangle_point,
     planar::{angle_and_length_to_vector, perpendicular, vector_to_angle},
     pseudo_angle::{AngleRange, PseudoAngle},
+    simd::MaskedValue,
 };
 
 /// Definition of leg geometry, see leg-schematic.svg for description of the values
 /// Note that some of the parameters are redundant for simpler calculation
 #[derive(Clone, Debug)]
-pub struct Params {
-    pub point_a: Point2<f64>,
-    pub point_b: Point2<f64>,
-    pub len_ac: f64,
-    pub len_bd: f64,
-    pub len_ce: f64,
-    pub len_df: f64,
-    pub len_de: f64,
+pub struct Params<T: SimdRealField> {
+    pub point_a: Point2<T>,
+    pub point_b: Point2<T>,
+    pub len_ac: T,
+    pub len_bd: T,
+    pub len_ce: T,
+    pub len_df: T,
+    pub len_de: T,
 
-    pub f_from_ed: ThirdPointRelativePosition,
-    pub e_from_fd: ThirdPointRelativePosition,
+    pub f_from_ed: ThirdPointRelativePosition<T>,
+    pub e_from_fd: ThirdPointRelativePosition<T>,
 
-    // pub a_range: AngleRange,
-    // pub b_range: AngleRange,
-    pub ace_range: AngleRange,
-    pub bdf_range: AngleRange,
-    pub ced_range: AngleRange,
+    // pub a_range: AngleRange<T>,
+    // pub b_range: AngleRange<T>,
+    pub ace_range: AngleRange<T>,
+    pub bdf_range: AngleRange<T>,
+    pub ced_range: AngleRange<T>,
 }
 
 /// Positions of points in the 2D leg plane view
 /// This is a necessary half way form when doing both forward and inverse kinematics.
-#[derive(Clone, DebugAsJson, Serialize, Deserialize)]
-pub struct KinematicState {
-    pub point_a: Point2<f64>,
-    pub point_b: Point2<f64>,
-    pub point_c: Point2<f64>,
-    pub point_d: Point2<f64>,
-    pub point_e: Point2<f64>,
-    pub point_f: Point2<f64>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KinematicState<T: SimdRealField> {
+    pub point_a: Point2<T>,
+    pub point_b: Point2<T>,
+    pub point_c: Point2<T>,
+    pub point_d: Point2<T>,
+    pub point_e: Point2<T>,
+    pub point_f: Point2<T>,
 }
 
 #[derive(Clone, Debug)]
-pub struct JointAngles {
-    pub alpha: f64,
-    pub beta: f64,
+pub struct JointAngles<T> {
+    pub alpha: T,
+    pub beta: T,
 }
 
-impl Params {
+pub struct JointTorques<T> {
+    pub torque_a: T,
+    pub torque_b: T,
+}
+
+impl Params<f64> {
     /// Verifies that kinematic state corresponds to this parameter set.
     /// Testing only, this is going to be slow.
-    pub fn verify(&self, ks: &KinematicState) -> Result<(), Vec<String>> {
+    pub fn verify(&self, ks: &KinematicState<f64>) -> Result<(), Vec<String>> {
         let mut problems = Vec::new();
 
         let mut check_position = |name, point: &Point2<f64>, expected: &Point2<f64>| {
@@ -66,7 +72,7 @@ impl Params {
         check_position("a", &ks.point_a, &self.point_a);
         check_position("b", &ks.point_b, &self.point_b);
 
-        let mut check_length = |name, point1: &Point2<_>, point2: &Point2<_>, expected: f64| {
+        let mut check_length = |name, point1: &Point2<f64>, point2: &Point2<f64>, expected: f64| {
             let length: f64 = distance(point1, point2);
             if (length - expected).abs() > 1e-3 {
                 problems.push(format!("Length {name} expected {expected}, have {length}"));
@@ -79,7 +85,7 @@ impl Params {
         check_length("de", &ks.point_d, &ks.point_e, self.len_de);
 
         let mut check_angle =
-            |name, a: &Point2<_>, b: &Point2<_>, c: &Point2<_>, range: &AngleRange| {
+            |name, a: &Point2<_>, b: &Point2<_>, c: &Point2<_>, range: &AngleRange<f64>| {
                 if !range.contains(PseudoAngle::with_points(a, b, c)) {
                     problems.push(format!("Angle range {name} not satisfied"));
                 }
@@ -114,12 +120,12 @@ impl Params {
     }
 
     /// Extract parameters that correspond to this kinematic state.
-    /// This is mostly for testing only.
+    /// f64his is mostly for testing only.
     /// `angle_tolerance` is angle difference in radians from the kinematic state allowed by
     /// the new params (but the angle will always be cropped at  0 and +-180)
-    pub fn with_kinematic_state(ks: &KinematicState, angle_tolerance_radians: f64) -> Self {
+    pub fn with_kinematic_state(ks: &KinematicState<f64>, angle_tolerance_radians: f64) -> Self {
         let range_from_points = |a, b, c| {
-            let angle = PseudoAngle::with_points(a, b, c).to_radians();
+            let angle = PseudoAngle::<f64>::with_points(a, b, c).to_radians();
             let min = angle - angle_tolerance_radians;
             let max = angle + angle_tolerance_radians;
 
@@ -152,14 +158,24 @@ impl Params {
     }
 }
 
-impl KinematicState {
+/// Forward and inverse kinematics: solvers and accessing results
+impl<T: SimdRealField + Copy> KinematicState<T>
+where
+    T::Element: SimdRealField + Copy,
+    T::SimdBool: SimdBool,
+{
     /// Construct new KinematicState from joint angles
     /// Not all combinations of joint angles might be valid, returns None if no
     /// solution is possible.
     pub fn with_joint_angles(
-        joint_angles: &JointAngles,
-        params: &Params,
-    ) -> Option<KinematicState> {
+        joint_angles: &JointAngles<T>,
+        params: &Params<T::Element>,
+    ) -> MaskedValue<KinematicState<T>, T::SimdBool> {
+        let params = ParamsSplatter(params);
+
+        let point_a = params.point_a();
+        let point_b = params.point_b();
+
         // TODO: Check the driving joint angles
         // if !params.a_range.contains(joint_angles.alpha) {
         //     return None;
@@ -167,125 +183,133 @@ impl KinematicState {
         // if !params.b_range.contains(joint_angles.beta) {
         //     return None;
         // }
-        let point_c =
-            params.point_a + angle_and_length_to_vector(joint_angles.alpha, params.len_ac);
-        let point_d = params.point_b + angle_and_length_to_vector(joint_angles.beta, params.len_bd);
-        let point_e = find_triangle_point(
+
+        let point_c = point_a + angle_and_length_to_vector(joint_angles.alpha, params.len_ac());
+        let point_d = point_b + angle_and_length_to_vector(joint_angles.beta, params.len_bd());
+        let (point_e, mut valid_mask) = find_triangle_point(
             &point_c,
-            params.len_ce,
+            params.len_ce(),
             &point_d,
-            params.len_de,
-            &params.ced_range,
-        )?;
+            params.len_de(),
+            &params.ced_range(),
+        )
+        .into_parts();
 
-        if !params
-            .ace_range
-            .contains(PseudoAngle::with_points_and_lengths(
-                &params.point_a,
-                &point_c,
-                &point_e,
-                params.len_ac,
-                params.len_ce,
-            ))
-        {
-            return None;
-        }
-        let point_f = params.f_from_ed.apply(&point_e, &point_d);
+        valid_mask = valid_mask
+            & params
+                .ace_range()
+                .contains(PseudoAngle::with_points_and_lengths(
+                    &point_a,
+                    &point_c,
+                    &point_e,
+                    params.len_ac(),
+                    params.len_ce(),
+                ));
+        let point_f = params.f_from_ed().apply(&point_e, &point_d);
 
-        if !params
-            .bdf_range
-            .contains(PseudoAngle::with_points_and_lengths(
-                &params.point_b,
-                &point_d,
-                &point_f,
-                params.len_bd,
-                params.len_df,
-            ))
-        {
-            return None;
-        }
+        valid_mask = valid_mask
+            & params
+                .bdf_range()
+                .contains(PseudoAngle::with_points_and_lengths(
+                    &point_b,
+                    &point_d,
+                    &point_f,
+                    params.len_bd(),
+                    params.len_df(),
+                ));
 
-        Some(KinematicState {
-            point_a: params.point_a,
-            point_b: params.point_b,
-            point_c,
-            point_d,
-            point_e,
-            point_f,
-        })
+        MaskedValue::new(
+            KinematicState {
+                point_a,
+                point_b,
+                point_c,
+                point_d,
+                point_e,
+                point_f,
+            },
+            valid_mask,
+        )
     }
 
     /// Construct new KinematicState from a foot point and parameters.
     /// Returns None if there is no solution possible.
     pub fn with_foot_position(
-        foot_position: Point2<f64>,
-        params: &Params,
-    ) -> Option<KinematicState> {
-        let point_f = foot_position;
-        let point_d = find_triangle_point(
-            &params.point_b,
-            params.len_bd,
-            &point_f,
-            params.len_df,
-            &params.bdf_range,
-        )?;
-        let point_e = params.e_from_fd.apply(&point_f, &point_d);
-        let point_c = find_triangle_point(
-            &params.point_a,
-            params.len_ac,
-            &point_e,
-            params.len_ce,
-            &params.ace_range,
-        )?;
+        foot_position: Point2<T>,
+        params: &Params<T::Element>,
+    ) -> MaskedValue<KinematicState<T>, T::SimdBool> {
+        let params = ParamsSplatter::<T>(params);
 
-        if !params
-            .bdf_range
-            .contains(PseudoAngle::with_points_and_lengths(
-                &params.point_b,
-                &point_d,
-                &point_f,
-                params.len_bd,
-                params.len_df,
-            ))
-        {
-            return None;
-        }
+        let point_a = params.point_a();
+        let point_b = params.point_b();
+        let point_f = foot_position;
+
+        let (point_d, mut valid_mask) = find_triangle_point(
+            &point_b,
+            params.len_bd(),
+            &point_f,
+            params.len_df(),
+            &params.bdf_range(),
+        )
+        .into_parts();
+        let point_e = params.e_from_fd().apply(&point_f, &point_d);
+        let point_c = find_triangle_point(
+            &point_a,
+            params.len_ac(),
+            &point_e,
+            params.len_ce(),
+            &params.ace_range(),
+        )
+        .unwrap_and_update_mask(&mut valid_mask);
+
+        valid_mask = valid_mask
+            & params
+                .bdf_range()
+                .contains(PseudoAngle::with_points_and_lengths(
+                    &point_b,
+                    &point_d,
+                    &point_f,
+                    params.len_bd(),
+                    params.len_df(),
+                ));
 
         // TODO: Check A and B angle ranges?
 
-        Some(KinematicState {
-            point_a: params.point_a,
-            point_b: params.point_b,
-            point_c,
-            point_d,
-            point_e,
-            point_f,
-        })
+        MaskedValue::new(
+            KinematicState {
+                point_a,
+                point_b,
+                point_c,
+                point_d,
+                point_e,
+                point_f,
+            },
+            valid_mask,
+        )
     }
 
-    pub fn get_foot_position(&self) -> Point2<f64> {
+    pub fn get_foot_position(&self) -> Point2<T> {
         self.point_f
     }
 
-    pub fn get_joint_angles(&self) -> JointAngles {
+    pub fn get_joint_angles(&self) -> JointAngles<T> {
         JointAngles {
-            alpha: vector_to_angle(self.point_c - self.point_a),
-            beta: vector_to_angle(self.point_d - self.point_b),
+            alpha: vector_to_angle(&(self.point_c - self.point_a)),
+            beta: vector_to_angle(&(self.point_d - self.point_b)),
         }
     }
 }
 
 /// Represents a position of a point relative to two other points, forming a simillar triangle.
 #[derive(Debug, Copy, Clone)]
-pub struct ThirdPointRelativePosition {
-    longitudal: f64,
-    lateral: f64,
+pub struct ThirdPointRelativePosition<T: SimdRealField> {
+    longitudal: T,
+    lateral: T,
 }
 
-impl ThirdPointRelativePosition {
+impl<T: SimdRealField + Copy> ThirdPointRelativePosition<T> {
     /// Construct new ThirdPointRelativePosition from an example,
     /// first two points are the pattern, third point is the expected output
-    pub fn new(a: &Point2<f64>, b: &Point2<f64>, c: &Point2<f64>) -> Self {
+    pub fn new(a: &Point2<T>, b: &Point2<T>, c: &Point2<T>) -> Self {
         let ab = b - a;
         let bc = c - b;
         ThirdPointRelativePosition {
@@ -295,9 +319,72 @@ impl ThirdPointRelativePosition {
     }
 
     /// Obtain a position of the third point from the two pattern points
-    pub fn apply(&self, a: &Point2<f64>, b: &Point2<f64>) -> Point2<f64> {
+    pub fn apply(&self, a: &Point2<T>, b: &Point2<T>) -> Point2<T> {
         let ab = b - a;
         b + ab * self.longitudal + perpendicular(&ab) * self.lateral
+    }
+}
+
+impl<T: SimdValue + SimdRealField> ThirdPointRelativePosition<T>
+where
+    T::Element: SimdRealField + Copy,
+{
+    pub fn splat(value: &ThirdPointRelativePosition<T::Element>) -> ThirdPointRelativePosition<T> {
+        ThirdPointRelativePosition {
+            longitudal: T::splat(value.longitudal),
+            lateral: T::splat(value.lateral),
+        }
+    }
+}
+
+struct ParamsSplatter<'a, T: SimdRealField>(&'a Params<T::Element>)
+where
+    T::Element: SimdRealField;
+
+impl<'a, T: SimdRealField> ParamsSplatter<'a, T>
+where
+    T::Element: SimdRealField + Copy,
+{
+    fn point_a(&self) -> Point2<T> {
+        self.0.point_a.map(T::splat)
+    }
+    fn point_b(&self) -> Point2<T> {
+        self.0.point_b.map(T::splat)
+    }
+    fn len_ac(&self) -> T {
+        T::splat(self.0.len_ac)
+    }
+    fn len_bd(&self) -> T {
+        T::splat(self.0.len_bd)
+    }
+    fn len_ce(&self) -> T {
+        T::splat(self.0.len_ce)
+    }
+    fn len_df(&self) -> T {
+        T::splat(self.0.len_df)
+    }
+    fn len_de(&self) -> T {
+        T::splat(self.0.len_de)
+    }
+
+    fn f_from_ed(&self) -> ThirdPointRelativePosition<T> {
+        ThirdPointRelativePosition::splat(&self.0.f_from_ed)
+    }
+
+    fn e_from_fd(&self) -> ThirdPointRelativePosition<T> {
+        ThirdPointRelativePosition::splat(&self.0.e_from_fd)
+    }
+
+    fn ace_range(&self) -> AngleRange<T> {
+        AngleRange::splat(&self.0.ace_range)
+    }
+
+    fn bdf_range(&self) -> AngleRange<T> {
+        AngleRange::splat(&self.0.bdf_range)
+    }
+
+    fn ced_range(&self) -> AngleRange<T> {
+        AngleRange::splat(&self.0.ced_range)
     }
 }
 
@@ -312,7 +399,7 @@ mod tests {
     use std::{f64::consts::FRAC_PI_4, panic};
     use test_strategy::proptest;
 
-    fn kinematic_state_strategy() -> impl Strategy<Value = KinematicState> {
+    fn kinematic_state_strategy() -> impl Strategy<Value = KinematicState<f64>> {
         proptest::collection::vec(point2_strategy(-1000.0, 1000.0), 6).prop_filter_map(
             "Coincident points",
             |points| {
@@ -336,7 +423,7 @@ mod tests {
     }
 
     /// Kinematic state and parameters taken from the sketch in leg-schematic.svg
-    fn example_leg() -> (Params, KinematicState) {
+    fn example_leg() -> (Params<f64>, KinematicState<f64>) {
         let ks = KinematicState {
             point_a: Point2::new(0.0, 0.0),
             point_b: Point2::new(-6.0, -7.0),
@@ -362,8 +449,8 @@ mod tests {
 
     /// Calculate distance between two kinematic states.
     fn kinematic_state_mean_square_deviation(
-        state1: &KinematicState,
-        state2: &KinematicState,
+        state1: &KinematicState<f64>,
+        state2: &KinematicState<f64>,
     ) -> f64 {
         (distance_squared(&state2.point_a, &state1.point_a)
             + distance_squared(&state2.point_b, &state1.point_b)
@@ -410,11 +497,15 @@ mod tests {
         let joint_angles = ks.get_joint_angles();
         let foot_position = ks.get_foot_position();
 
-        let ks2 = KinematicState::with_joint_angles(&joint_angles, &params).unwrap();
-        params.verify(&ks2).unwrap();
+        let ks2 = KinematicState::with_joint_angles(&joint_angles, &params).into_option();
 
         dbg!(&ks);
         dbg!(&ks2);
+
+        let ks2 = ks2.unwrap();
+        if let Err(problems) = params.verify(&ks2) {
+            panic!("kinematic state verification failed: {problems:?}");
+        }
 
         assert_abs_diff_eq!(&ks2.get_foot_position(), &foot_position, epsilon = 1e-6);
         assert_lt!(kinematic_state_mean_square_deviation(&ks, &ks2), 1e-3);
@@ -426,11 +517,15 @@ mod tests {
         let joint_angles = ks.get_joint_angles();
         let foot_position = ks.get_foot_position();
 
-        let ks2 = KinematicState::with_foot_position(foot_position, &params).unwrap();
-        params.verify(&ks2).unwrap();
+        let ks2 = KinematicState::with_foot_position(foot_position, &params).into_option();
 
         dbg!(&ks);
         dbg!(&ks2);
+
+        let ks2 = ks2.unwrap();
+        if let Err(problems) = params.verify(&ks2) {
+            panic!("kinematic state verification failed: {problems:?}");
+        }
 
         assert_abs_diff_eq!(
             ks2.get_joint_angles().alpha,
@@ -446,32 +541,42 @@ mod tests {
     }
 
     #[proptest]
-    fn forward_kinematics_fuzzing(#[strategy(kinematic_state_strategy())] ks: KinematicState) {
+    fn forward_kinematics_fuzzing(#[strategy(kinematic_state_strategy())] ks: KinematicState<f64>) {
         let params = Params::with_kinematic_state(&ks, FRAC_PI_4);
         let joint_angles = ks.get_joint_angles();
         let foot_position = ks.get_foot_position();
 
-        let ks2 = KinematicState::with_joint_angles(&joint_angles, &params).unwrap();
-        params.verify(&ks2).unwrap();
+        let ks2 = KinematicState::with_joint_angles(&joint_angles, &params).into_option();
 
         dbg!(&ks);
         dbg!(&ks2);
+
+        prop_assert!(ks2.is_some());
+        let ks2 = ks2.unwrap();
+        if let Err(problems) = params.verify(&ks2) {
+            prop_assert!(false, "kinematic state verification failed: {:?}", problems);
+        }
 
         assert_abs_diff_eq!(&ks2.get_foot_position(), &foot_position, epsilon = 1e-6);
         assert_lt!(kinematic_state_mean_square_deviation(&ks, &ks2), 1e-3);
     }
 
     #[proptest]
-    fn inverse_kinematics_fuzzing(#[strategy(kinematic_state_strategy())] ks: KinematicState) {
+    fn inverse_kinematics_fuzzing(#[strategy(kinematic_state_strategy())] ks: KinematicState<f64>) {
         let params = Params::with_kinematic_state(&ks, FRAC_PI_4);
         let joint_angles = ks.get_joint_angles();
         let foot_position = ks.get_foot_position();
 
-        let ks2 = KinematicState::with_foot_position(foot_position, &params).unwrap();
-        params.verify(&ks2).unwrap();
+        let ks2 = KinematicState::with_foot_position(foot_position, &params).into_option();
 
         dbg!(&ks);
         dbg!(&ks2);
+
+        prop_assert!(ks2.is_some());
+        let ks2 = ks2.unwrap();
+        if let Err(problems) = params.verify(&ks2) {
+            prop_assert!(false, "kinematic state verification failed: {:?}", problems);
+        }
 
         assert_abs_diff_eq!(
             ks2.get_joint_angles().alpha,

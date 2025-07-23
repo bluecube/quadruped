@@ -1,8 +1,10 @@
-use nalgebra::Point2;
+use nalgebra::{Point2, Scalar, one, zero};
+use simba::simd::{SimdBool as _, SimdRealField};
 
 use super::{
     planar::perpendicular,
     pseudo_angle::{AngleRange, PseudoAngle},
+    simd::MaskedValue,
 };
 
 /// Given two points `a` and `b` and two trigangle side lengths
@@ -10,15 +12,18 @@ use super::{
 /// between AC and CB is within `c_angle_range`.
 /// If no such triangle exists, returns None.
 /// If the angle range is not enough to disambiguate, then the point which results in positive C angle will be returned.
-pub fn find_triangle_point(
-    a: &Point2<f64>,
-    length_a: f64,
-    b: &Point2<f64>,
-    length_b: f64,
-    c_angle_range: &AngleRange,
-) -> Option<Point2<f64>> {
-    assert!(length_a >= 0.0);
-    assert!(length_b >= 0.0);
+pub fn find_triangle_point<T: SimdRealField + Copy>(
+    a: &Point2<T>,
+    length_a: T,
+    b: &Point2<T>,
+    length_b: T,
+    c_angle_range: &AngleRange<T>,
+) -> MaskedValue<Point2<T>, T::SimdBool>
+where
+    T::Element: Scalar,
+{
+    assert!(length_a.is_simd_positive().all(), "length_a = {length_a:?}");
+    assert!(length_b.is_simd_positive().all(), "length_b = {length_b:?}");
 
     // D = A + t * (B - A) ; Point D is the foot of the height DC
     // C = D + s * perpendicular(B - A).
@@ -35,36 +40,30 @@ pub fn find_triangle_point(
     // For now let's not deal with this as on the real robot the condition should be
     // filtered out by joint angle limits
 
-    let t = (p - q + 1.0) / 2.0;
+    let t = (p - q + one::<T>()) / (one::<T>() + one::<T>());
     let s_squared = p - t * t;
-    if s_squared < -1e-6f64 {
-        // There is no point C that satisfies the lengths (regardless of angle range).
-        println!("Lengths don't work out");
-        return None;
-    }
+    let valid_mask = s_squared.simd_ge(-T::simd_default_epsilon().simd_sqrt());
 
-    let s = s_squared.max(0.0).sqrt();
+    let s = s_squared.simd_max(zero()).simd_sqrt();
     let ad = ab * t;
-    let dc = s * perpendicular(&ab);
-    let ac = ad + dc;
-    let c = a + ac;
-    let cb = b - c;
+    let d = a + ad;
 
-    let angle_positive = PseudoAngle::with_vectors_and_lengths(ac, length_a, cb, length_b);
+    // The following are vectors for the positive angle solution
+    let dc_positive = perpendicular(&ab) * s;
+    let ac_positive = ad + dc_positive;
+    let cb_positive = ab - ac_positive;
 
-    if c_angle_range.contains(angle_positive) {
-        Some(c)
-    } else if c_angle_range.contains(-angle_positive) {
-        let c = a + ad - dc;
-        Some(c)
-    } else {
-        println!(
-            "Angle range does not work out (+-PseudoAngle({}) = {} not in {:?})",
-            angle_positive.to_raw(),
-            angle_positive.to_radians(),
-            c_angle_range,
-        );
-        None
+    let angle_positive =
+        PseudoAngle::with_vectors_and_lengths(ac_positive, length_a, cb_positive, length_b);
+    let positive_valid = c_angle_range.contains(angle_positive);
+    let negative_valid = c_angle_range.contains(-angle_positive);
+
+    let c = d + dc_positive.map(|x| x.select(positive_valid, -x));
+    let valid_mask = valid_mask & (positive_valid | negative_valid);
+
+    MaskedValue {
+        value: c,
+        mask: valid_mask,
     }
 }
 
@@ -96,7 +95,8 @@ mod tests {
             &point_b,
             length_b,
             &AngleRange::half_range(left),
-        );
+        )
+        .into_option();
 
         match (result, expected) {
             (Some(result), Some(expected)) => {
@@ -127,8 +127,10 @@ mod tests {
             length_a,
             &point_b,
             length_b,
-            &AngleRange::half_range(angle > PseudoAngle::ZERO),
-        );
+            &AngleRange::half_range(angle > PseudoAngle::zero()),
+        )
+        .into_option();
+
         prop_assert!(result.is_some());
         let result = result.unwrap();
         prop_assert!(relative_eq!(
@@ -171,7 +173,8 @@ mod tests {
                 min: PseudoAngle::from_raw(f64::MIN),
                 max: PseudoAngle::from_raw(f64::MAX),
             },
-        );
+        )
+        .into_option();
         prop_assert!(result.is_some());
         let result = result.unwrap();
         prop_assert!(abs_diff_eq!(&result, &expected, epsilon = base * 1e-6));
@@ -196,7 +199,8 @@ mod tests {
                 &point_b,
                 length_b,
                 &AngleRange::half_range(left),
-            ),
+            )
+            .into_option(),
             None
         );
     }
@@ -220,7 +224,8 @@ mod tests {
                 &point_b,
                 length_b,
                 &AngleRange::half_range(left),
-            ),
+            )
+            .into_option(),
             None
         );
     }

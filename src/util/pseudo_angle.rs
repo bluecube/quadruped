@@ -1,120 +1,196 @@
-use std::{
-    f64::consts::{PI, SQRT_2},
-    ops::Neg,
-};
+use std::{f64::consts::PI, ops::Neg};
 
-use more_asserts::{assert_ge, assert_le, debug_assert_gt};
-use nalgebra::{Point2, Vector2};
+use more_asserts::{assert_ge, assert_le};
+use nalgebra::{Point2, Vector2, one, zero};
+use num::FromPrimitive;
+use simba::simd::{SimdBool, SimdRealField, SimdValue};
 
 /// Represents signed angle (-PI to PI) between two vectors.
 /// This basically stores cosine of the angle, but wrapped so that the range covers both left and right.
 /// Can be cheaply compared to another PseudoAngle, or (slightly less cheaply) converted to a regular angle in radians.
 #[repr(transparent)]
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
-pub struct PseudoAngle(f64);
+pub struct PseudoAngle<T>(T);
 
-impl PseudoAngle {
-    pub const ZERO: PseudoAngle = PseudoAngle(0.0);
-    pub const PI: PseudoAngle = PseudoAngle(2.0);
-    pub const FRAC_PI_2: PseudoAngle = PseudoAngle(1.0);
-    pub const FRAC_PI_4: PseudoAngle = PseudoAngle(1.0 - 1.0 / SQRT_2);
+impl<T: SimdRealField> PseudoAngle<T> {
+    pub fn zero() -> PseudoAngle<T> {
+        PseudoAngle(zero())
+    }
 
+    pub fn pi() -> PseudoAngle<T> {
+        PseudoAngle(one::<T>() + one())
+    }
+
+    pub fn frac_pi_2() -> PseudoAngle<T> {
+        PseudoAngle(one())
+    }
+
+    pub fn frac_pi_4() -> PseudoAngle<T> {
+        let one = one::<T>();
+        let two = one.clone() + one.clone();
+        PseudoAngle(one.clone() - one / two.simd_sqrt())
+    }
+}
+
+impl<T: SimdRealField> PseudoAngle<T> {
     /// Creates a new pseudo angle representing the given angle in radians
-    pub fn from_radians(angle: f64) -> Self {
-        PseudoAngle((1.0 - angle.cos()).copysign(angle))
+    pub fn from_radians(angle: T) -> Self {
+        PseudoAngle((one::<T>() - angle.clone().simd_cos()).simd_copysign(angle))
     }
 
     /// Creates a new pseudo angle representing angle between vectors a and b.
     /// To avoid square roots, vector lengths are passed as arguments.
     pub fn with_vectors_and_lengths(
-        a: Vector2<f64>,
-        length_a: f64,
-        b: Vector2<f64>,
-        length_b: f64,
+        a: Vector2<T>,
+        length_a: T,
+        b: Vector2<T>,
+        length_b: T,
     ) -> Self {
-        debug_assert_gt!(length_a, 0.0);
-        debug_assert_gt!(length_b, 0.0);
+        debug_assert!(length_a.clone().is_simd_positive().all());
+        debug_assert!(length_b.clone().is_simd_positive().all());
 
         let dot = a.dot(&b) / (length_a * length_b);
         let side = a.perp(&b);
-        PseudoAngle((1.0 - dot).copysign(side))
+        PseudoAngle((one::<T>() - dot).simd_copysign(side))
     }
 
     /// Creates a new pseudo angle representing angle between line segments AB and BC.
     /// To avoid square roots, lengths are passed as arguments.
     pub fn with_points_and_lengths(
-        a: &Point2<f64>,
-        b: &Point2<f64>,
-        c: &Point2<f64>,
-        length_ab: f64,
-        length_bc: f64,
+        a: &Point2<T>,
+        b: &Point2<T>,
+        c: &Point2<T>,
+        length_ab: T,
+        length_bc: T,
     ) -> Self {
         Self::with_vectors_and_lengths(b - a, length_ab, c - b, length_bc)
     }
 
     /// Creates a new pseudo angle representing angle between line segments AB and BC.
     /// This will be slower than `with_points_and_lengths`
-    pub fn with_points(a: &Point2<f64>, b: &Point2<f64>, c: &Point2<f64>) -> Self {
+    pub fn with_points(a: &Point2<T>, b: &Point2<T>, c: &Point2<T>) -> Self {
         let ab = b - a;
         let bc = c - b;
-        Self::with_vectors_and_lengths(ab, ab.norm(), bc, bc.norm())
+        let ab_norm = ab.norm();
+        let bc_norm = bc.norm();
+        Self::with_vectors_and_lengths(ab, ab_norm, bc, bc_norm)
     }
 
     /// Converts the pseudo angle back to radians.
-    pub fn to_radians(&self) -> f64 {
-        (1.0 - self.0.abs())
-            .clamp(-1.0, 1.0)
-            .acos()
-            .copysign(self.0)
+    pub fn to_radians(&self) -> T {
+        (one::<T>() - self.0.clone().simd_abs())
+            .simd_clamp(-one::<T>(), one())
+            .simd_acos()
+            .simd_copysign(self.0.clone())
     }
 
-    pub fn to_degrees(&self) -> f64 {
-        self.to_radians().to_degrees()
+    pub fn to_raw(&self) -> T {
+        self.0.clone()
     }
 
-    pub fn to_raw(&self) -> f64 {
-        self.0
-    }
-
-    pub fn from_raw(raw: f64) -> Self {
+    pub fn from_raw(raw: T) -> Self {
         PseudoAngle(raw)
     }
 
     pub fn abs(&self) -> Self {
-        PseudoAngle(self.0.abs())
+        PseudoAngle(self.0.clone().simd_abs())
     }
 }
 
-impl Neg for PseudoAngle {
-    type Output = PseudoAngle;
+impl<T: SimdRealField + FromPrimitive> PseudoAngle<T> {
+    pub fn to_degrees(&self) -> T {
+        self.to_radians() * T::from_f32(180.0).unwrap() / T::simd_pi()
+    }
+}
+
+impl<T: SimdValue> SimdValue for PseudoAngle<T> {
+    const LANES: usize = T::LANES;
+    type Element = PseudoAngle<T::Element>;
+    type SimdBool = T::SimdBool;
+
+    fn splat(val: Self::Element) -> Self {
+        PseudoAngle(T::splat(val.0))
+    }
+
+    fn extract(&self, i: usize) -> Self::Element {
+        PseudoAngle(self.0.extract(i))
+    }
+
+    unsafe fn extract_unchecked(&self, i: usize) -> Self::Element {
+        PseudoAngle(unsafe { self.0.extract_unchecked(i) })
+    }
+
+    fn replace(&mut self, i: usize, val: Self::Element) {
+        self.0.replace(i, val.0);
+    }
+
+    unsafe fn replace_unchecked(&mut self, i: usize, val: Self::Element) {
+        unsafe { self.0.replace_unchecked(i, val.0) };
+    }
+
+    fn select(self, cond: Self::SimdBool, other: Self) -> Self {
+        PseudoAngle(self.0.select(cond, other.0))
+    }
+}
+
+impl<T: Neg> Neg for PseudoAngle<T> {
+    type Output = PseudoAngle<T::Output>;
 
     fn neg(self) -> Self::Output {
-        PseudoAngle(-self.0)
+        PseudoAngle(self.0.neg())
     }
 }
 
 /// Allowed range of an angle.
 /// Both values are inclusive.
 #[derive(Clone, Debug)]
-pub struct AngleRange {
-    pub min: PseudoAngle,
-    pub max: PseudoAngle,
+pub struct AngleRange<T: SimdRealField> {
+    pub min: PseudoAngle<T>,
+    pub max: PseudoAngle<T>,
 }
 
-impl Default for AngleRange {
-    fn default() -> Self {
-        AngleRange {
-            min: -PseudoAngle::from_raw(-f64::INFINITY),
-            max: PseudoAngle::from_raw(f64::INFINITY),
+// impl<T: SimdRealField> Default for AngleRange<T> {
+//     fn default() -> Self {
+//         AngleRange {
+//             min: -PseudoAngle::from_raw(-f64::INFINITY),
+//             max: PseudoAngle::from_raw(f64::INFINITY),
+//         }
+//     }
+// }
+
+impl<T: SimdRealField> AngleRange<T> {
+    pub fn contains(&self, value: PseudoAngle<T>) -> T::SimdBool {
+        value.0.clone().simd_ge(self.min.0.clone()) & value.0.clone().simd_le(self.max.0.clone())
+    }
+
+    pub fn half_range(positive: bool) -> Self {
+        if positive {
+            AngleRange {
+                min: PseudoAngle::zero(),
+                max: PseudoAngle::pi(),
+            }
+        } else {
+            AngleRange {
+                min: -PseudoAngle::<T>::pi(),
+                max: PseudoAngle::zero(),
+            }
         }
     }
 }
 
-impl AngleRange {
-    pub fn contains(&self, value: PseudoAngle) -> bool {
-        value >= self.min && value <= self.max
+impl<T: SimdValue + SimdRealField> AngleRange<T>
+where
+    T::Element: SimdRealField + Copy,
+{
+    pub fn splat(value: &AngleRange<T::Element>) -> AngleRange<T> {
+        AngleRange {
+            min: PseudoAngle::splat(value.min),
+            max: PseudoAngle::splat(value.max),
+        }
     }
+}
 
+impl AngleRange<f64> {
     pub fn from_radians(min: f64, max: f64) -> Self {
         assert_le!(min, max);
         assert_ge!(min, -PI);
@@ -128,20 +204,6 @@ impl AngleRange {
 
     pub fn from_degrees(min: f64, max: f64) -> Self {
         Self::from_radians(min.to_radians(), max.to_radians())
-    }
-
-    pub fn half_range(positive: bool) -> Self {
-        if positive {
-            AngleRange {
-                min: PseudoAngle::ZERO,
-                max: PseudoAngle::PI,
-            }
-        } else {
-            AngleRange {
-                min: -PseudoAngle::PI,
-                max: PseudoAngle::ZERO,
-            }
-        }
     }
 }
 
@@ -215,11 +277,11 @@ mod tests {
         prop_assert!(relative_eq!(neg.0, expected.0, max_relative = 1e-10));
     }
 
-    #[test_case(PseudoAngle::ZERO, 0.0; "ZERO")]
-    #[test_case(PseudoAngle::PI, PI; "PI")]
-    #[test_case(PseudoAngle::FRAC_PI_2, FRAC_PI_2; "FRAC_PI_2")]
-    #[test_case(PseudoAngle::FRAC_PI_4, FRAC_PI_4; "FRAC_PI_4")]
-    fn consts(pa: PseudoAngle, expected: f64) {
+    #[test_case(PseudoAngle::zero(), 0.0; "ZERO")]
+    #[test_case(PseudoAngle::pi(), PI; "PI")]
+    #[test_case(PseudoAngle::frac_pi_2(), FRAC_PI_2; "FRAC_PI_2")]
+    #[test_case(PseudoAngle::frac_pi_4(), FRAC_PI_4; "FRAC_PI_4")]
+    fn consts(pa: PseudoAngle<f64>, expected: f64) {
         assert!(
             relative_eq!(pa.to_radians(), expected, max_relative = 1e-6),
             "{} == {}",
