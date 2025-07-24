@@ -6,13 +6,13 @@ use ggez::{
     graphics::{self, Color, DrawMode, Mesh, MeshBuilder},
 };
 use nalgebra::Point2;
-use quadruped::legs::planar::KinematicState;
+use quadruped::legs::planar::Leg2DState;
 
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
 struct Args {
-    #[arg(value_parser = |s:&str| serde_json::from_str::<KinematicState<f64>>(s))]
-    kinematic_state: Option<KinematicState<f64>>,
+    #[arg(value_parser = |s:&str| serde_json::from_str::<Leg2DState<f64>>(s))]
+    leg_state: Option<Leg2DState<f64>>,
 }
 
 struct MainState {
@@ -23,7 +23,7 @@ fn convert_pt(p: Point2<f64>) -> glam::Vec2 {
     glam::Vec2::new(300.0 + 20.0 * -p.x as f32, 200.0 + 20.0 * -p.y as f32)
 }
 
-fn kinematic_state_mesh(ctx: &mut Context, ks: &KinematicState<f64>) -> GameResult<Mesh> {
+fn leg_state_mesh(ctx: &mut Context, ks: &Leg2DState<f64>) -> GameResult<Mesh> {
     let line_color = (128, 128, 128).into();
     let fill_color = (64, 64, 64).into();
     let point_radius = 8.0;
@@ -123,8 +123,8 @@ fn kinematic_state_mesh(ctx: &mut Context, ks: &KinematicState<f64>) -> GameResu
 }
 
 /// Kinematic state taken from the sketch in leg-schematic.svg
-fn example_ks() -> KinematicState<f64> {
-    KinematicState {
+fn example_ks() -> Leg2DState<f64> {
+    Leg2DState {
         point_a: Point2::new(0.0, 0.0),
         point_b: Point2::new(-6.0, -7.0),
         point_c: Point2::new(-9.0, 4.0),
@@ -135,8 +135,8 @@ fn example_ks() -> KinematicState<f64> {
 }
 
 impl MainState {
-    fn new(ctx: &mut Context, ks: &KinematicState<f64>) -> GameResult<MainState> {
-        let mesh = kinematic_state_mesh(ctx, ks)?;
+    fn new(ctx: &mut Context, ks: &Leg2DState<f64>) -> GameResult<MainState> {
+        let mesh = leg_state_mesh(ctx, ks)?;
         Ok(MainState { mesh })
     }
 }
@@ -164,6 +164,6 @@ pub fn main() -> GameResult {
         .window_setup(WindowSetup::default().title("2D leg visualisation"))
         .window_mode(WindowMode::default().resizable(true))
         .build()?;
-    let state = MainState::new(&mut ctx, &args.kinematic_state.unwrap_or_else(example_ks))?;
+    let state = MainState::new(&mut ctx, &args.leg_state.unwrap_or_else(example_ks))?;
     event::run(ctx, event_loop, state);
 }
