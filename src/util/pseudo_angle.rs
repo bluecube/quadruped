@@ -143,20 +143,11 @@ impl<T: Neg> Neg for PseudoAngle<T> {
 
 /// Allowed range of an angle.
 /// Both values are inclusive.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AngleRange<T: SimdRealField> {
     pub min: PseudoAngle<T>,
     pub max: PseudoAngle<T>,
 }
-
-// impl<T: SimdRealField> Default for AngleRange<T> {
-//     fn default() -> Self {
-//         AngleRange {
-//             min: -PseudoAngle::from_raw(-f64::INFINITY),
-//             max: PseudoAngle::from_raw(f64::INFINITY),
-//         }
-//     }
-// }
 
 impl<T: SimdRealField> AngleRange<T> {
     pub fn contains(&self, value: PseudoAngle<T>) -> T::SimdBool {
@@ -178,14 +169,11 @@ impl<T: SimdRealField> AngleRange<T> {
     }
 }
 
-impl<T: SimdValue + SimdRealField> AngleRange<T>
-where
-    T::Element: SimdRealField + Copy,
-{
-    pub fn splat(value: &AngleRange<T::Element>) -> AngleRange<T> {
+impl<T: SimdRealField + Copy> AngleRange<T> {
+    pub fn map<T2: SimdRealField, F: FnMut(T) -> T2>(&self, mut f: F) -> AngleRange<T2> {
         AngleRange {
-            min: PseudoAngle::splat(value.min),
-            max: PseudoAngle::splat(value.max),
+            min: PseudoAngle(f(self.min.0)),
+            max: PseudoAngle(f(self.max.0)),
         }
     }
 }

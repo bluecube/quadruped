@@ -13,7 +13,7 @@ use crate::util::{
 
 /// Definition of leg geometry, see leg-schematic.svg for description of the values
 /// Note that some of the parameters are redundant for simpler calculation
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Leg2D<T: SimdRealField> {
     pub point_a: Point2<T>,
     pub point_b: Point2<T>,
@@ -184,6 +184,25 @@ impl<U: SimdRealField + Copy> Leg2D<U> {
     }
 }
 
+impl<T: SimdRealField + Copy> Leg2D<T> {
+    pub fn map<T2: SimdRealField, F: FnMut(T) -> T2>(&self, mut f: F) -> Leg2D<T2> {
+        Leg2D {
+            point_a: self.point_a.map(&mut f),
+            point_b: self.point_b.map(&mut f),
+            len_ac: f(self.len_ac),
+            len_bd: f(self.len_bd),
+            len_ce: f(self.len_ce),
+            len_df: f(self.len_df),
+            len_de: f(self.len_de),
+            f_from_ed: self.f_from_ed.map(&mut f),
+            e_from_fd: self.e_from_fd.map(&mut f),
+            ace_range: self.ace_range.map(&mut f),
+            bdf_range: self.bdf_range.map(&mut f),
+            ced_range: self.ced_range.map(&mut f),
+        }
+    }
+}
+
 /// Debugging functions, slow.
 impl Leg2D<f64> {
     /// Verifies that leg state corresponds to this parameter set.
@@ -314,7 +333,7 @@ where
 }
 
 /// Represents a position of a point relative to two other points, forming a simillar triangle.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct ThirdPointRelativePosition<T: SimdRealField> {
     longitudal: T,
     lateral: T,
@@ -339,14 +358,14 @@ impl<T: SimdRealField + Copy> ThirdPointRelativePosition<T> {
     }
 }
 
-impl<T: SimdValue + SimdRealField> ThirdPointRelativePosition<T>
-where
-    T::Element: SimdRealField + Copy,
-{
-    pub fn splat(value: &ThirdPointRelativePosition<T::Element>) -> ThirdPointRelativePosition<T> {
+impl<T: SimdRealField + Copy> ThirdPointRelativePosition<T> {
+    pub fn map<T2: SimdRealField, F: FnMut(T) -> T2>(
+        &self,
+        mut f: F,
+    ) -> ThirdPointRelativePosition<T2> {
         ThirdPointRelativePosition {
-            longitudal: T::splat(value.longitudal),
-            lateral: T::splat(value.lateral),
+            longitudal: f(self.longitudal),
+            lateral: f(self.lateral),
         }
     }
 }
@@ -362,43 +381,49 @@ where
     fn point_a(&self) -> Point2<T> {
         self.0.point_a.map(T::splat)
     }
+
     fn point_b(&self) -> Point2<T> {
         self.0.point_b.map(T::splat)
     }
+
     fn len_ac(&self) -> T {
         T::splat(self.0.len_ac)
     }
+
     fn len_bd(&self) -> T {
         T::splat(self.0.len_bd)
     }
+
     fn len_ce(&self) -> T {
         T::splat(self.0.len_ce)
     }
+
     fn len_df(&self) -> T {
         T::splat(self.0.len_df)
     }
+
     fn len_de(&self) -> T {
         T::splat(self.0.len_de)
     }
 
     fn f_from_ed(&self) -> ThirdPointRelativePosition<T> {
-        ThirdPointRelativePosition::splat(&self.0.f_from_ed)
+        self.0.f_from_ed.map(T::splat)
     }
 
     fn e_from_fd(&self) -> ThirdPointRelativePosition<T> {
-        ThirdPointRelativePosition::splat(&self.0.e_from_fd)
+        self.0.e_from_fd.map(T::splat)
     }
 
     fn ace_range(&self) -> AngleRange<T> {
-        AngleRange::splat(&self.0.ace_range)
+        self.0.ace_range.map(T::splat)
     }
 
     fn bdf_range(&self) -> AngleRange<T> {
-        AngleRange::splat(&self.0.bdf_range)
+        self.0.bdf_range.map(T::splat)
     }
 
     fn ced_range(&self) -> AngleRange<T> {
-        AngleRange::splat(&self.0.ced_range)
+        self.0.ced_range.map(T::splat)
     }
 }
 
@@ -593,5 +618,14 @@ mod tests {
     ) -> Result<(), TestCaseError> {
         let leg = Leg2D::with_state(&leg_state, FRAC_PI_4);
         forward_kinematics_test(leg, leg_state)
+    }
+
+    #[proptest]
+    fn leg_map_identity(#[strategy(leg_state_strategy())] leg_state: Leg2DState<f64>) {
+        let leg = Leg2D::with_state(&leg_state, FRAC_PI_4);
+
+        let mapped = leg.map(|x| x);
+
+        prop_assert_eq!(mapped, leg);
     }
 }
