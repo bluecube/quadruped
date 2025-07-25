@@ -51,6 +51,7 @@ pub struct JointAngles<T> {
     pub beta: T,
 }
 
+#[derive(Clone, Debug)]
 pub struct JointTorques<T> {
     pub torque_a: T,
     pub torque_b: T,
@@ -312,6 +313,50 @@ impl Leg2D<f64> {
             ced_range: range_from_points(&state.point_c, &state.point_e, &state.point_d),
         }
     }
+
+    pub fn jacobian(&self, joint_angles: &JointAngles<f64>) -> Option<Matrix2<f64>> {
+        type AF = autofloat::AutoFloat<f64, 2>;
+        let foot_pos_pds = self
+            .map(|x| AF::constant(x))
+            .forward_kinematics::<AF>(&JointAngles {
+                alpha: AF::variable(joint_angles.alpha, 0),
+                beta: AF::variable(joint_angles.beta, 1),
+            })
+            .into_option()?
+            .get_foot_position();
+
+        let jacobian = Matrix2::from_fn(|i, j| foot_pos_pds[i].dx[j]);
+        Some(jacobian)
+    }
+
+    pub fn forward_force_transfer_jacobian(
+        &self,
+        joint_angles: &JointAngles<f64>,
+        joint_torques: &JointTorques<f64>,
+    ) -> Option<Vector2<f64>> {
+        let jacobian = self.jacobian(joint_angles)?;
+        let torque = Vector2::new(joint_torques.torque_a, joint_torques.torque_b);
+        //torque = jacobian.transpose() * force
+        let foot_force = jacobian.transpose().try_inverse().unwrap() * torque;
+
+        Some(foot_force)
+    }
+
+    pub fn inverse_force_transfer_jacobian(
+        &self,
+        joint_angles: &JointAngles<f64>,
+        foot_force: &Vector2<f64>,
+    ) -> Option<JointTorques<f64>> {
+        let jacobian = self.jacobian(joint_angles)?;
+        let torque = jacobian.transpose() * foot_force;
+
+        let torque = JointTorques {
+            torque_a: torque[0],
+            torque_b: torque[1],
+        };
+
+        Some(torque)
+    }
 }
 
 /// Accessing results of FK an IK.
@@ -329,6 +374,27 @@ where
             alpha: vector_to_angle(&(self.point_c - self.point_a)),
             beta: vector_to_angle(&(self.point_d - self.point_b)),
         }
+    }
+}
+
+/// Force transfer
+impl<T: SimdRealField + Copy> Leg2DState<T> {
+    pub fn forward_force_transfer(&self, torques: &JointTorques<T>, leg: &Leg2D<T>) -> Vector2<T> {
+        let ac = self.point_c - self.point_a;
+        let ce = self.point_e - self.point_c;
+        let bd = self.point_d - self.point_b;
+        let fd = self.point_d - self.point_f;
+        let fe = self.point_e - self.point_f;
+
+        let force_ce = ce * torques.torque_a / ac.perp(&ce);
+
+        // Force applied at point d by torque_b
+        let force_d_from_torque_b =
+            perpendicular(&bd) * (-torques.torque_b / (leg.len_bd * leg.len_bd));
+        let force_bd =
+            bd * (-(fd.perp(&force_d_from_torque_b) + fe.perp(&force_ce)) / fd.perp(&bd));
+
+        force_ce + force_d_from_torque_b + force_bd
     }
 }
 
@@ -430,7 +496,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::proptest_util::point2_strategy;
+    use crate::util::proptest_util::{point2_strategy, vector2_strategy};
     use approx::{abs_diff_eq, relative_eq};
     use clap::error::Result;
     use more_asserts::assert_gt;
@@ -627,5 +693,65 @@ mod tests {
         let mapped = leg.map(|x| x);
 
         prop_assert_eq!(mapped, leg);
+    }
+
+    #[proptest]
+    fn forward_force_direct_vs_jacobian(
+        #[strategy(leg_state_strategy())] leg_state: Leg2DState<f64>,
+        #[strategy(((-1.0f64..1.0f64), (-1.0f64..1.0f64)).prop_map(|(torque_a, torque_b)| JointTorques{torque_a, torque_b}))]
+        joint_torques: JointTorques<f64>,
+    ) {
+        // Don't allow ACE angles close to 0, because that means forces are indeterminate
+        prop_assume!(
+            PseudoAngle::with_points(&leg_state.point_a, &leg_state.point_c, &leg_state.point_e)
+                .to_degrees()
+                .abs()
+                > 5.0
+        );
+
+        let leg = Leg2D::with_state(&leg_state, FRAC_PI_4);
+        let joint_angles = leg_state.get_joint_angles();
+
+        let direct_force = leg_state.forward_force_transfer(&joint_torques, &leg);
+        let jacobian_force = leg
+            .forward_force_transfer_jacobian(&joint_angles, &joint_torques)
+            .unwrap();
+
+        prop_assert!(
+            relative_eq!(direct_force, jacobian_force, max_relative = 1e-3),
+            "{:?} != {:?}",
+            direct_force,
+            jacobian_force
+        );
+    }
+
+    #[proptest]
+    fn force_round_trip(
+        #[strategy(leg_state_strategy())] leg_state: Leg2DState<f64>,
+        #[strategy(vector2_strategy(-100.0, 100.0))] foot_force: Vector2<f64>,
+    ) {
+        // Don't allow ACE angles close to 0, because that means forces are indeterminate
+        prop_assume!(
+            PseudoAngle::with_points(&leg_state.point_a, &leg_state.point_c, &leg_state.point_e)
+                .to_degrees()
+                .abs()
+                > 5.0
+        );
+
+        let leg = Leg2D::with_state(&leg_state, FRAC_PI_4);
+        let joint_angles = leg_state.get_joint_angles();
+
+        let torque = leg.inverse_force_transfer_jacobian(&joint_angles, &foot_force);
+        prop_assert!(torque.is_some());
+        let torque = torque.unwrap();
+
+        let reconstructed_foot_force = leg_state.forward_force_transfer(&torque, &leg);
+
+        prop_assert!(
+            relative_eq!(reconstructed_foot_force, foot_force, max_relative = 1e-3),
+            "{:?} != {:?}",
+            reconstructed_foot_force,
+            foot_force
+        );
     }
 }

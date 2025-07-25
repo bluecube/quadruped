@@ -202,6 +202,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
+name = "autofloat"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6aa9de6bab1a91ff8f36185899116cb14f468f47437be12194264cf56e37c1a"
+dependencies = [
+ "approx",
+ "nalgebra",
+ "num-traits",
+ "simba",
+]
+
+[[package]]
 name = "backtrace"
 version = "0.3.75"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2170,6 +2182,7 @@ name = "quadruped"
 version = "0.1.0"
 dependencies = [
  "approx",
+ "autofloat",
  "clap",
  "ggez",
  "more-asserts",
