@@ -466,11 +466,11 @@ mod tests {
     fn example_leg() -> (Leg2D<f64>, Leg2DState<f64>) {
         let state = Leg2DState {
             point_a: Point2::new(0.0, 0.0),
-            point_b: Point2::new(-6.0, -7.0),
-            point_c: Point2::new(-9.0, 4.0),
-            point_d: Point2::new(-16.0, -11.0),
-            point_e: Point2::new(-26.0, -5.0),
-            point_f: Point2::new(-4.0, -23.0),
+            point_b: Point2::new(-30.0, -25.0),
+            point_c: Point2::new(-45.0, 35.0),
+            point_d: Point2::new(-75.0, -10.0),
+            point_e: Point2::new(-120.0, 20.0),
+            point_f: Point2::new(-15.0, -120.0),
         };
 
         let mut params = Leg2D::with_state(&state, 0.0);
