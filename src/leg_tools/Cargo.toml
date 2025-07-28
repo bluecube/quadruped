@@ -1,0 +1,17 @@
+[package]
+name = "quadruped-leg_tools"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "leg2d_visualisation"
+path = "leg2d_visualisation/main.rs"
+
+[dependencies]
+quadruped = { path = ".." }
+ggez = { version = "0.9.3" }
+nalgebra = { workspace=true }
+clap = { version = "4.5.41", features = ["derive"] }
+serde_json.workspace = true

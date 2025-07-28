@@ -1,0 +1,39 @@
+[workspace]
+members = ["leg_tools"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["Kuba Marek"]
+repository = "https://github.com/bluecube/quadruped"
+
+[workspace.dependencies]
+nalgebra = { version = "0.33.2" }
+serde_json = "1.0.105"
+
+[package]
+name = "quadruped"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "quadruped"
+path = "core/lib.rs"
+
+[dependencies]
+ggez = { version = "0.9.3", optional = true }
+nalgebra = { workspace=true, features = ["proptest-support", "serde-serialize"] }
+serde = "1.0.188"
+serde_json.workspace = true
+more-asserts = "0.3.1"
+simba = { version = "0.9.0", features = ["wide"] }
+num = "0.4.3"
+autofloat = { version = "1.0.3", features = ["nalgebra", "simba"] }
+
+[dev-dependencies]
+proptest = "1.0.0"
+test-strategy = "0.4.3"
+approx = "0.5.1"
+test-case = "2.2.2"

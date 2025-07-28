@@ -498,7 +498,6 @@ mod tests {
     use super::*;
     use crate::util::proptest_util::{point2_strategy, vector2_strategy};
     use approx::{abs_diff_eq, relative_eq};
-    use clap::error::Result;
     use more_asserts::assert_gt;
     use nalgebra::distance_squared;
     use proptest::prelude::*;
