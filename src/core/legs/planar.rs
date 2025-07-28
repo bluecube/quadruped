@@ -1,8 +1,9 @@
 use std::f64::consts::PI;
 
 use nalgebra::{Matrix2, Point2, SimdBool, SimdValue, Vector2, distance};
+use num::NumCast;
 use serde::{Deserialize, Serialize};
-use simba::simd::SimdRealField;
+use simba::{scalar::RealField, simd::SimdRealField};
 
 use crate::util::{
     find_triangle_point,
@@ -313,12 +314,15 @@ impl Leg2D<f64> {
             ced_range: range_from_points(&state.point_c, &state.point_e, &state.point_d),
         }
     }
+}
 
-    pub fn jacobian(&self, joint_angles: &JointAngles<f64>) -> Option<Matrix2<f64>> {
-        type AF = autofloat::AutoFloat<f64, 2>;
+/// Kinematics jacobians and force transfer
+impl<T: RealField + Copy + NumCast> Leg2D<T> {
+    pub fn jacobian(&self, joint_angles: &JointAngles<T>) -> Option<Matrix2<T>> {
+        type AF<T> = autofloat::AutoFloat<T, 2>;
         let foot_pos_pds = self
-            .map(|x| AF::constant(x))
-            .forward_kinematics::<AF>(&JointAngles {
+            .map(|x| AF::<T>::constant(x))
+            .forward_kinematics::<AF<T>>(&JointAngles {
                 alpha: AF::variable(joint_angles.alpha, 0),
                 beta: AF::variable(joint_angles.beta, 1),
             })
@@ -331,9 +335,9 @@ impl Leg2D<f64> {
 
     pub fn forward_force_transfer_jacobian(
         &self,
-        joint_angles: &JointAngles<f64>,
-        joint_torques: &JointTorques<f64>,
-    ) -> Option<Vector2<f64>> {
+        joint_angles: &JointAngles<T>,
+        joint_torques: &JointTorques<T>,
+    ) -> Option<Vector2<T>> {
         let jacobian = self.jacobian(joint_angles)?;
         let torque = Vector2::new(joint_torques.torque_a, joint_torques.torque_b);
         //torque = jacobian.transpose() * force
@@ -344,9 +348,9 @@ impl Leg2D<f64> {
 
     pub fn inverse_force_transfer_jacobian(
         &self,
-        joint_angles: &JointAngles<f64>,
-        foot_force: &Vector2<f64>,
-    ) -> Option<JointTorques<f64>> {
+        joint_angles: &JointAngles<T>,
+        foot_force: &Vector2<T>,
+    ) -> Option<JointTorques<T>> {
         let jacobian = self.jacobian(joint_angles)?;
         let torque = jacobian.transpose() * foot_force;
 
